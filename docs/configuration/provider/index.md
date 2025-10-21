@@ -26,6 +26,7 @@ List of subscription providers.
             "timeout": "",
           },
           "override_dialer": {},
+          "override_tls": {},
           "override_anytls": {}
         }
       ]
@@ -54,6 +55,7 @@ List of subscription providers.
           "http_client": "", // or {}
           "update_interval": "",
           "override_dialer": {},
+          "override_tls": {},
 
           "override_anytls": {},
 
@@ -110,6 +112,10 @@ Override AnyTLS fields of outbounds in provider, see [AnyTLS Fields Override](/c
 ##### override_dialer
 
 Override dialer fields of outbounds in provider, see [Dialer Fields Override](/configuration/provider/override_dialer/) for details.
+
+##### override_tls
+
+Override TLS fields of outbounds in provider, see [TLS Fields Override](/configuration/provider/override_tls/) for details.
 
 ### Local Fields
 

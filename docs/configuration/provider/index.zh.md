@@ -26,6 +26,7 @@
             "timeout": "",
           },
           "override_dialer": {},
+          "override_tls": {},
           "override_anytls": {}
         }
       ]
@@ -54,6 +55,7 @@
           "http_client": "", // or {}
           "update_interval": "",
           "override_dialer": {},
+          "override_tls": {},
 
           "override_anytls": {},
 
@@ -110,6 +112,10 @@
 ##### override_dialer
 
 覆写订阅内容的拨号字段, 参阅 [拨号字段覆写](/zh/configuration/provider/override_dialer/)。
+
+##### override_tls
+
+覆写订阅内容的 TLS 字段, 参阅 [TLS 字段覆写](/zh/configuration/provider/override_tls/)。
 
 ### 本地字段
 

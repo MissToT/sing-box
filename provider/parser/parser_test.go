@@ -57,7 +57,7 @@ func TestOverrideAnyTLSOptions(t *testing.T) {
 					ClientMetadata: testCase.clientMetadata,
 					DisableReuse:   testCase.disableReuse,
 				},
-			}}, nil, testCase.override, nil, "")
+			}}, nil, nil, testCase.override, nil, "")
 			options := outbounds[0].Options.(*option.AnyTLSOutboundOptions)
 			require.Equal(t, testCase.expectedClientMetadata, options.ClientMetadata)
 			require.Equal(t, testCase.expectedDisableReuse, options.DisableReuse)
