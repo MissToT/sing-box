@@ -206,6 +206,7 @@ func New(options Options) (*Box, error) {
 	service.MustRegister[log.Factory](ctx, logFactory)
 
 	C.URLTestUnifiedDelay = experimentalOptions.URLTestUnifiedDelay
+	C.TCPConcurrent = experimentalOptions.TCPConcurrent
 
 	var internalServices []adapter.LifecycleService
 	routeOptions := common.PtrValueOrDefault(options.Route)
