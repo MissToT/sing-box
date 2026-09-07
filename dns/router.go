@@ -94,7 +94,6 @@ func NewRouter(ctx context.Context, logFactory log.Factory, options option.DNSOp
 		DisableExpire:     options.DNSClientOptions.DisableExpire,
 		OptimisticTimeout: optimisticTimeout,
 		RoundRobinCache:   options.DNSClientOptions.RoundRobinCache,
-		TCPConcurrent:     options.DNSClientOptions.TCPConcurrent,
 		CacheCapacity:     options.DNSClientOptions.CacheCapacity,
 		MinCacheTTL:       options.DNSClientOptions.MinCacheTTL,
 		MaxCacheTTL:       options.DNSClientOptions.MaxCacheTTL,
@@ -1551,10 +1550,6 @@ func (r *Router) ClearCache() {
 	if r.dnsReverseMapping != nil {
 		r.dnsReverseMapping.Purge()
 	}
-}
-
-func (r *Router) TCPConcurrent() bool {
-	return r.client.(*Client).TCPConcurrent()
 }
 
 func (r *Router) LookupReverseMapping(ip netip.Addr) (string, bool) {

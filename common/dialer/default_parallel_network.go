@@ -15,7 +15,7 @@ import (
 	"github.com/sagernet/sing/service"
 )
 
-func DialSerialNetwork(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, tcpConcurrent bool, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.Conn, error) {
+func DialSerialNetwork(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.Conn, error) {
 	if len(destinationAddresses) == 0 {
 		if !destination.IsIP() {
 			panic("invalid usage")
@@ -25,7 +25,7 @@ func DialSerialNetwork(ctx context.Context, dialer N.Dialer, network string, des
 	if parallelDialer, isParallel := dialer.(ParallelNetworkDialer); isParallel {
 		return parallelDialer.DialParallelNetwork(ctx, network, destination, destinationAddresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 	}
-	if tcpConcurrent && len(destinationAddresses) > 1 {
+	if C.TCPConcurrent && len(destinationAddresses) > 1 {
 		return dialConcurrentNetwork(ctx, dialer, network, destination, destinationAddresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 	}
 	var errors []error
@@ -400,7 +400,8 @@ func listenConcurrentNetworkPacketPreferred(ctx context.Context, dialer N.Dialer
 	}
 }
 
-func ListenSerialNetworkPacket(ctx context.Context, dialer N.Dialer, destination M.Socksaddr, destinationAddresses []netip.Addr, tcpConcurrent bool, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.PacketConn, netip.Addr, error) {	if len(destinationAddresses) == 0 {
+func ListenSerialNetworkPacket(ctx context.Context, dialer N.Dialer, destination M.Socksaddr, destinationAddresses []netip.Addr, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.PacketConn, netip.Addr, error) {
+	if len(destinationAddresses) == 0 {
 		if !destination.IsIP() {
 			panic("invalid usage")
 		}
@@ -409,7 +410,7 @@ func ListenSerialNetworkPacket(ctx context.Context, dialer N.Dialer, destination
 	if parallelDialer, isParallel := dialer.(ParallelNetworkDialer); isParallel {
 		return parallelDialer.ListenSerialNetworkPacket(ctx, destination, destinationAddresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 	}
-	if tcpConcurrent && len(destinationAddresses) > 1 {
+	if C.TCPConcurrent && len(destinationAddresses) > 1 {
 		return listenConcurrentNetworkPacket(ctx, dialer, destination, destinationAddresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 	}
 	var errors []error

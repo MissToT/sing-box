@@ -105,7 +105,7 @@ func (d *resolveDialer) DialContext(ctx context.Context, network string, destina
 	if err != nil {
 		return nil, err
 	}
-	if d.router.TCPConcurrent() && len(addresses) > 1 {
+	if C.TCPConcurrent && len(addresses) > 1 {
 		return dialConcurrentNetworkPreferred(ctx, d.dialer, network, destination, addresses, d.queryOptions.Strategy == C.DomainStrategyPreferIPv6, d.fallbackDelay)
 	}
 	if d.parallel {
@@ -130,7 +130,7 @@ func (d *resolveDialer) ListenPacket(ctx context.Context, destination M.Socksadd
 	}
 	var conn net.PacketConn
 	var destinationAddress netip.Addr
-	if d.router.TCPConcurrent() && len(addresses) > 1 {
+	if C.TCPConcurrent && len(addresses) > 1 {
 		conn, destinationAddress, err = listenConcurrentNetworkPacketPreferred(ctx, d.dialer, destination, addresses, d.queryOptions.Strategy == C.DomainStrategyPreferIPv6, d.fallbackDelay)
 	} else {
 		conn, destinationAddress, err = N.ListenSerial(ctx, d.dialer, destination, addresses)
@@ -165,11 +165,10 @@ func (d *resolveParallelNetworkDialer) DialParallelInterface(ctx context.Context
 	if fallbackDelay == 0 {
 		fallbackDelay = d.fallbackDelay
 	}
-	tcpConcurrent := d.router.TCPConcurrent()
 	if d.parallel {
-		return DialParallelNetwork(ctx, d.dialer, network, destination, addresses, d.queryOptions.Strategy == C.DomainStrategyPreferIPv6, tcpConcurrent, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
+		return DialParallelNetwork(ctx, d.dialer, network, destination, addresses, d.queryOptions.Strategy == C.DomainStrategyPreferIPv6, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 	} else {
-		return DialSerialNetwork(ctx, d.dialer, network, destination, addresses, tcpConcurrent, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
+		return DialSerialNetwork(ctx, d.dialer, network, destination, addresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 	}
 }
 

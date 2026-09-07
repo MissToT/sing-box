@@ -105,7 +105,6 @@ type Client struct {
 	optimisticTimeout time.Duration
 	cacheCapacity     uint32
 	roundRobinCache   bool
-	tcpConcurrent     bool
 	minCacheTTL       uint32
 	maxCacheTTL       uint32
 	clientSubnet      netip.Prefix
@@ -128,7 +127,6 @@ type ClientOptions struct {
 	DisableExpire     bool
 	OptimisticTimeout time.Duration
 	RoundRobinCache   bool
-	TCPConcurrent     bool
 	CacheCapacity     uint32
 	MinCacheTTL       uint32
 	MaxCacheTTL       uint32
@@ -148,7 +146,6 @@ func NewClient(options ClientOptions) *Client {
 		optimisticTimeout: options.OptimisticTimeout,
 		cacheCapacity:     cacheCapacity,
 		roundRobinCache:   options.RoundRobinCache,
-		tcpConcurrent:     options.TCPConcurrent,
 		minCacheTTL:       options.MinCacheTTL,
 		maxCacheTTL:       options.MaxCacheTTL,
 		clientSubnet:      options.ClientSubnet,
@@ -166,10 +163,6 @@ func NewClient(options ClientOptions) *Client {
 		client.initializeMemoryCache()
 	}
 	return client
-}
-
-func (c *Client) TCPConcurrent() bool {
-	return c.tcpConcurrent
 }
 
 type dnsCacheKey struct {
