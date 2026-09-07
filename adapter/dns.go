@@ -25,6 +25,7 @@ type DNSRouter interface {
 	Rules() []DNSRule
 	Rule(uuid string) (DNSRule, bool)
 	ResetNetwork()
+	TCPConcurrent() bool
 }
 
 type DNSClient interface {

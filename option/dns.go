@@ -69,6 +69,7 @@ type DNSClientOptions struct {
 	DisableExpire    bool                  `json:"disable_expire,omitempty"`
 	IndependentCache bool                  `json:"independent_cache,omitempty" schema:"omit"`
 	RoundRobinCache  bool                  `json:"round_robin_cache,omitempty"`
+	TCPConcurrent    bool                  `json:"tcp_concurrent,omitempty"`
 	CacheCapacity    uint32                `json:"cache_capacity,omitempty"`
 	MinCacheTTL      uint32                `json:"min_cache_ttl,omitempty"`
 	MaxCacheTTL      uint32                `json:"max_cache_ttl,omitempty"`
