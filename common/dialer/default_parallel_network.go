@@ -106,7 +106,7 @@ func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string,
 // 若地址列表只包含单一地址族,直接退化为普通的 dialConcurrentNetwork;
 // 若同时包含两族地址,则按 preferIPv6 分为 primaries/fallbacks,
 // 先只对 primaries 发起并发竞速,超过 fallbackDelay 仍未成功时才追加对 fallbacks 的并发竞速。
-func dialConcurrentNetworkPreferred(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, preferIPv6 bool, fallbackDelay time.Duration) (net.Conn, error) {
+func dialConcurrentNetworkPreferred(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, preferIPv6 bool, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.Conn, error) {
 	addresses4 := common.Filter(destinationAddresses, func(address netip.Addr) bool {
 		return address.Is4() || address.Is4In6()
 	})
@@ -114,7 +114,7 @@ func dialConcurrentNetworkPreferred(ctx context.Context, dialer N.Dialer, networ
 		return address.Is6() && !address.Is4In6()
 	})
 	if len(addresses4) == 0 || len(addresses6) == 0 {
-		return dialConcurrentNetwork(ctx, dialer, network, destination, destinationAddresses, nil, nil, nil, fallbackDelay)
+		return dialConcurrentNetwork(ctx, dialer, network, destination, destinationAddresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 	}
 	if fallbackDelay == 0 {
 		fallbackDelay = N.DefaultFallbackDelay
@@ -142,7 +142,7 @@ func dialConcurrentNetworkPreferred(ctx context.Context, dialer N.Dialer, networ
 		if !primary {
 			ras = fallbacks
 		}
-		c, err := dialConcurrentNetwork(ctx, dialer, network, destination, ras, nil, nil, nil, fallbackDelay)
+		c, err := dialConcurrentNetwork(ctx, dialer, network, destination, ras, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 		select {
 		case results <- dialResult{Conn: c, error: err, primary: primary, done: true}:
 		case <-returned:
@@ -194,6 +194,10 @@ func DialParallelNetwork(ctx context.Context, dialer ParallelInterfaceDialer, ne
 
 	if fallbackDelay == 0 {
 		fallbackDelay = N.DefaultFallbackDelay
+	}
+
+	if C.TCPConcurrent && len(destinationAddresses) > 1 {
+		return dialConcurrentNetworkPreferred(ctx, dialer, network, destination, destinationAddresses, preferIPv6, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 	}
 
 	returned := make(chan struct{})
