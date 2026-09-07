@@ -274,7 +274,7 @@ func (h *Outbound) DialParallel(ctx context.Context, network string, destination
 	case C.DomainStrategyPreferIPv6:
 		preferIPv6 = len(destinationAddresses) > 0
 	}
-	conn, err := dialer.DialParallelNetwork(ctx, h.dialer, network, destination, destinationAddresses, preferIPv6, nil, nil, nil, h.fallbackDelay)
+	conn, err := dialer.DialParallelNetwork(ctx, h.dialer, network, destination, destinationAddresses, preferIPv6, tcpConcurrent, nil, nil, nil, h.fallbackDelay)
 	if err != nil {
 		return nil, err
 	}
