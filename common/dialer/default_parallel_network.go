@@ -321,7 +321,7 @@ func listenConcurrentNetworkPacket(ctx context.Context, dialer N.Dialer, destina
 }
 
 // listenConcurrentNetworkPacketPreferred 是 dialConcurrentNetworkPreferred 的 UDP/PacketConn 版本。
-func listenConcurrentNetworkPacketPreferred(ctx context.Context, dialer N.Dialer, destination M.Socksaddr, destinationAddresses []netip.Addr, preferIPv6 bool, fallbackDelay time.Duration) (net.PacketConn, netip.Addr, error) {
+func listenConcurrentNetworkPacketPreferred(ctx context.Context, dialer N.Dialer, destination M.Socksaddr, destinationAddresses []netip.Addr, preferIPv6 bool, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.PacketConn, netip.Addr, error) {
 	addresses4 := common.Filter(destinationAddresses, func(address netip.Addr) bool {
 		return address.Is4() || address.Is4In6()
 	})
@@ -358,7 +358,7 @@ func listenConcurrentNetworkPacketPreferred(ctx context.Context, dialer N.Dialer
 		if !primary {
 			ras = fallbacks
 		}
-		conn, addr, err := listenConcurrentNetworkPacket(ctx, dialer, destination, ras, nil, nil, nil, fallbackDelay)
+		conn, addr, err := listenConcurrentNetworkPacket(ctx, dialer, destination, ras, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 		select {
 		case results <- packetResult{PacketConn: conn, address: addr, error: err, primary: primary, done: true}:
 		case <-returned:
