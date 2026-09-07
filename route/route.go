@@ -1004,6 +1004,7 @@ func (r *Router) actionResolve(ctx context.Context, metadata *adapter.InboundCon
 				metadata.IPVersion = 6
 			}
 		}
+		metadata.PreferIPv6 = action.Strategy == C.DomainStrategyPreferIPv6
 	}
 	return nil
 }

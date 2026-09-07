@@ -350,20 +350,32 @@ func (h *Outbound) DialParallelNetwork(ctx context.Context, network string, dest
 	return conn, nil
 }
 
-func (h *Outbound) ListenSerialNetworkPacket(ctx context.Context, destination M.Socksaddr, destinationAddresses []netip.Addr, networkStrategy *C.NetworkStrategy, networkType []C.InterfaceType, fallbackNetworkType []C.InterfaceType, fallbackDelay time.Duration) (net.PacketConn, netip.Addr, error) {
-	if h.isMyLoopbackAddress(destinationAddresses...) {
-		return nil, netip.Addr{}, E.New("loopback connection to TUN range")
-	}
-	ctx, metadata := adapter.ExtendContext(ctx)
-	metadata.Outbound = h.Tag()
-	metadata.Destination = destination
-	h.logger.InfoContext(ctx, "outbound packet connection")
-	conn, newDestination, err := dialer.ListenSerialNetworkPacket(ctx, h.dialer, destination, destinationAddresses, networkStrategy, networkType, fallbackNetworkType, fallbackDelay)
-	if err != nil {
-		return nil, netip.Addr{}, err
-	}
-	return conn, newDestination, nil
-}
+func (h *Outbound) ListenSerialNetworkPacket(ctx context.Context, destination M.Socksaddr, destinationAddresses []netip.Addr, networkStrategy *C.NetworkStrategy, networkType []C.InterfaceType, fallbackNetworkType []C.InterfaceType, fallbackDelay time.Duration) (net.PacketConn, netip.Addr, error) {  
+	if h.isMyLoopbackAddress(destinationAddresses...) {  
+		return nil, netip.Addr{}, E.New("loopback connection to TUN range")  
+	}  
+	ctx, metadata := adapter.ExtendContext(ctx)  
+	metadata.Outbound = h.Tag()  
+	metadata.Destination = destination  
+	h.logger.InfoContext(ctx, "outbound packet connection")  
+	var preferIPv6 bool  
+	switch h.directDomainStrategy {  
+	case C.DomainStrategyAsIS:  
+		preferIPv6 = len(destinationAddresses) > 0 && destinationAddresses[0].Is6()  
+	case C.DomainStrategyIPv4Only:  
+		destinationAddresses = common.Filter(destinationAddresses, netip.Addr.Is4)  
+		if len(destinationAddresses) == 0 {  
+			return nil, netip.Addr{}, E.New("no IPv4 address available for ", destination)  
+		}  
+	case C.DomainStrategyIPv6Only:  
+		destinationAddresses = common.Filter(destinationAddresses, netip.Addr.Is6)  
+		if len(destinationAddresses) == 0 {  
+			return nil, netip.Addr{}, E.New("no IPv6 address available for ", destination)  
+		}  
+	case C.DomainStrategyPreferIPv6:  
+		preferIPv6 = len(destinationAddresses) > 0  
+	}  
+	conn, newDestination, err := dialer.ListenSerialNetwork
 
 func (h *Outbound) IsEmpty() bool {
 	return h.isEmpty
