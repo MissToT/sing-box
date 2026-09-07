@@ -995,7 +995,6 @@ func (r *Router) actionResolve(ctx context.Context, metadata *adapter.InboundCon
 			r.logger.DebugContext(ctx, "resolved [", strings.Join(F.MapToString(metadata.CacheIPs), " "), "] for match only")
 		} else {
 			metadata.DestinationAddresses = addresses
-			metadata.TCPConcurrent = r.dns.TCPConcurrent()
 			r.logger.DebugContext(ctx, "resolved [", strings.Join(F.MapToString(metadata.DestinationAddresses), " "), "]")
 		}
 		if len(addresses) > 0 {

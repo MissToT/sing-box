@@ -91,7 +91,6 @@ type InboundContext struct {
 	NetworkType         []C.InterfaceType
 	FallbackNetworkType []C.InterfaceType
 	FallbackDelay       time.Duration
-	TCPConcurrent       bool
 
 	DestinationAddresses                []netip.Addr
 	DNSResponse                         *dns.Msg
