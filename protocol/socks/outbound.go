@@ -96,7 +96,7 @@ func (h *Outbound) DialContext(ctx context.Context, network string, destination 
 		if err != nil {
 			return nil, err
 		}
-		return dialer.DialSerialNetwork(ctx, h.client, network, destination, destinationAddresses, nil, nil, nil, 0)
+		return N.DialSerial(ctx, h.client, network, destination, destinationAddresses)
 	}
 	return h.client.DialContext(ctx, network, destination)
 }
