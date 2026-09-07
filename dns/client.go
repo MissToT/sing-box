@@ -105,7 +105,6 @@ type Client struct {
 	optimisticTimeout time.Duration
 	cacheCapacity     uint32
 	roundRobinCache   bool
-	tcpConcurrent     bool
 	minCacheTTL       uint32
 	maxCacheTTL       uint32
 	clientSubnet      netip.Prefix
@@ -117,14 +116,8 @@ type Client struct {
 	logger            logger.ContextLogger
 	cache             *freelru.Cache[dnsCacheKey, *dnsMsg]
 	roundRobinIndex   *freelru.Cache[dnsCacheKey, *dnsMsg]
-	probeCache        *freelru.Cache[dnsCacheKey, *probeState]
 	cacheLock         compatible.Map[dnsCacheKey, chan struct{}]
 	backgroundRefresh compatible.Map[dnsCacheKey, struct{}]
-}
-
-type probeState struct {
-	winner   netip.Addr
-	probedAt time.Time
 }
 
 type ClientOptions struct {
@@ -134,7 +127,6 @@ type ClientOptions struct {
 	DisableExpire     bool
 	OptimisticTimeout time.Duration
 	RoundRobinCache   bool
-	TCPConcurrent     bool
 	CacheCapacity     uint32
 	MinCacheTTL       uint32
 	MaxCacheTTL       uint32
@@ -154,19 +146,12 @@ func NewClient(options ClientOptions) *Client {
 		optimisticTimeout: options.OptimisticTimeout,
 		cacheCapacity:     cacheCapacity,
 		roundRobinCache:   options.RoundRobinCache,
-		tcpConcurrent:     options.TCPConcurrent,
 		minCacheTTL:       options.MinCacheTTL,
 		maxCacheTTL:       options.MaxCacheTTL,
 		clientSubnet:      options.ClientSubnet,
 		initRDRCFunc:      options.RDRC,
 		initDNSCacheFunc:  options.DNSCache,
 		logger:            options.Logger,
-	}
-	if client.tcpConcurrent {
-		probeCache, err := freelru.New[dnsCacheKey, *probeState](cacheCapacity, maphash.NewHasher[dnsCacheKey]().Hash32)
-		if err == nil {
-			client.probeCache = probeCache
-		}
 	}
 	if client.maxCacheTTL > 0 && client.minCacheTTL > client.maxCacheTTL {
 		client.maxCacheTTL = client.minCacheTTL
@@ -623,9 +608,7 @@ func (c *Client) lookupToExchange(ctx context.Context, transport adapter.DNSTran
 	if response.Rcode != dns.RcodeSuccess {
 		return nil, RcodeError(response.Rcode)
 	}
-	addresses := MessageToAddresses(response)
-	addresses = c.applyConcurrentProbe(ctx, c.newCacheKey(transport, question, &message, options), addresses)
-	return addresses, nil
+	return MessageToAddresses(response), nil
 }
 
 func (c *Client) questionCache(ctx context.Context, transport adapter.DNSTransport, message *dns.Msg, options adapter.DNSQueryOptions, responseChecker func(response *dns.Msg) bool) ([]netip.Addr, error) {
@@ -645,9 +628,7 @@ func (c *Client) questionCache(ctx context.Context, transport adapter.DNSTranspo
 	if response.Rcode != dns.RcodeSuccess {
 		return nil, RcodeError(response.Rcode)
 	}
-	addresses := MessageToAddresses(response)
-	addresses = c.applyConcurrentProbe(ctx, cacheKey, addresses)
-	return addresses, nil
+	return MessageToAddresses(response), nil
 }
 
 func (c *Client) getRoundRobin(response *dnsMsg) *dns.Msg {
@@ -656,70 +637,6 @@ func (c *Client) getRoundRobin(response *dnsMsg) *dns.Msg {
 	} else {
 		return response.msg.Copy()
 	}
-}
-
-func (c *Client) applyConcurrentProbe(ctx context.Context, key dnsCacheKey, addresses []netip.Addr) []netip.Addr {  
-	if !c.tcpConcurrent || len(addresses) <= 1 {  
-		return addresses  
-	}  
-	if c.probeCache != nil {  
-		if state, ok := c.probeCache.Get(key); ok && time.Since(state.probedAt) < 30*time.Second {  
-			return reorderWinnerFirst(addresses, state.winner)  
-		}  
-	}  
-	winner, ok := probeFastestAddress(ctx, addresses, 300*time.Millisecond)  
-	if !ok {  
-		return addresses // 全部探测失败,回退到原始顺序  
-	}  
-	if c.probeCache != nil {  
-		c.probeCache.Add(key, &probeState{winner: winner, probedAt: time.Now()})  
-	}  
-	return reorderWinnerFirst(addresses, winner)  
-}  
-  
-func reorderWinnerFirst(addresses []netip.Addr, winner netip.Addr) []netip.Addr {  
-	result := make([]netip.Addr, 0, len(addresses))  
-	result = append(result, winner)  
-	for _, addr := range addresses {  
-		if addr != winner {  
-			result = append(result, addr)  
-		}  
-	}  
-	return result  
-}  
-  
-func probeFastestAddress(ctx context.Context, addresses []netip.Addr, timeout time.Duration) (netip.Addr, bool) {  
-	type probeResult struct {  
-		addr netip.Addr  
-		err  error  
-	}  
-	probeCtx, cancel := context.WithTimeout(ctx, timeout)  
-	defer cancel()  
-	results := make(chan probeResult, len(addresses))  
-	for _, addr := range addresses {  
-		go func(addr netip.Addr) {  
-			// 用 443 端口做通用可达性/延迟探测代理;DNS 解析阶段并不知道实际业务端口  
-			conn, err := net.DialTimeout("tcp", net.JoinHostPort(addr.String(), "443"), timeout)  
-			if conn != nil {  
-				conn.Close()  
-			}  
-			select {  
-			case results <- probeResult{addr: addr, err: err}:  
-			case <-probeCtx.Done():  
-			}  
-		}(addr)  
-	}  
-	for i := 0; i < len(addresses); i++ {  
-		select {  
-		case res := <-results:  
-			if res.err == nil {  
-				return res.addr, true  
-			}  
-		case <-probeCtx.Done():  
-			return netip.Addr{}, false  
-		}  
-	}  
-	return netip.Addr{}, false  
 }
 
 func (c *Client) loadResponse(key dnsCacheKey) (*dns.Msg, int, bool) {

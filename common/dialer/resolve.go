@@ -3,6 +3,7 @@ package dialer
 import (
 	"context"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -104,6 +105,9 @@ func (d *resolveDialer) DialContext(ctx context.Context, network string, destina
 	if err != nil {
 		return nil, err
 	}
+	if C.TCPConcurrent && len(addresses) > 1 {
+		return dialConcurrentNetworkPreferred(ctx, d.dialer, network, destination, addresses, d.queryOptions.Strategy == C.DomainStrategyPreferIPv6, d.fallbackDelay)
+	}
 	if d.parallel {
 		return N.DialParallel(ctx, d.dialer, network, destination, addresses, d.queryOptions.Strategy == C.DomainStrategyPreferIPv6, d.fallbackDelay)
 	} else {
@@ -124,7 +128,13 @@ func (d *resolveDialer) ListenPacket(ctx context.Context, destination M.Socksadd
 	if err != nil {
 		return nil, err
 	}
-	conn, destinationAddress, err := N.ListenSerial(ctx, d.dialer, destination, addresses)
+	var conn net.PacketConn
+	var destinationAddress netip.Addr
+	if C.TCPConcurrent && len(addresses) > 1 {
+		conn, destinationAddress, err = listenConcurrentNetworkPacketPreferred(ctx, d.dialer, destination, addresses, d.queryOptions.Strategy == C.DomainStrategyPreferIPv6, d.fallbackDelay)
+	} else {
+		conn, destinationAddress, err = N.ListenSerial(ctx, d.dialer, destination, addresses)
+	}
 	if err != nil {
 		return nil, err
 	}
