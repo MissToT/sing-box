@@ -3,7 +3,6 @@ package dialer
 import (
 	"context"
 	"net"
-	"net/netip"
 	"sync"
 	"time"
 
