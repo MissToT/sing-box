@@ -50,30 +50,6 @@ func DialSerialNetwork(ctx context.Context, dialer N.Dialer, network string, des
 }
 
 func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.Conn, error) {
-	// 若同一域名上次并发竞速已有胜出地址，且该地址仍在本次解析结果中，
-	// 优先单独尝试该地址，成功则直接复用，跳过全量并发竞速。
-	if destination.IsDomain() {
-		if cachedAddr, loaded := globalConcurrentWinnerCache.get(destination.Fqdn); loaded && containsAddress(destinationAddresses, cachedAddr) {
-			cachedDialCtx, cachedCancel := context.WithTimeout(ctx, cachedWinnerDialTimeout(fallbackDelay))
-			var conn net.Conn
-			var err error
-			if parallelDialer, isParallel := dialer.(ParallelInterfaceDialer); isParallel {
-				conn, err = parallelDialer.DialParallelInterface(cachedDialCtx, network, M.SocksaddrFrom(cachedAddr, destination.Port), strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
-			} else {
-				conn, err = dialer.DialContext(cachedDialCtx, network, M.SocksaddrFrom(cachedAddr, destination.Port))
-			}
-			cachedCancel()
-			if err == nil {
-				globalConcurrentWinnerCache.set(destination.Fqdn, cachedAddr)
-				if factory := service.FromContext[log.Factory](ctx); factory != nil {
-					factory.NewLogger("dialer").DebugContext(ctx, "cached winner reused ", cachedAddr, " (", destination, ")")
-				}
-				return conn, nil
-			}
-			// 缓存地址拨号失败，回退到全量并发竞速，不影响正确性。
-		}
-	}
-
 	type dialResult struct {
 		net.Conn
 		error
@@ -113,9 +89,6 @@ func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string,
 		res := <-results
 		if res.error == nil {
 			cancel()
-			if destination.IsDomain() {
-				globalConcurrentWinnerCache.set(destination.Fqdn, res.address)
-			}
 			if factory := service.FromContext[log.Factory](ctx); factory != nil {
 				factory.NewLogger("dialer").DebugContext(ctx, "winner ", res.address, " (", destination, ")")
 			}
@@ -127,14 +100,6 @@ func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string,
 		factory.NewLogger("dialer").DebugContext(ctx, "all failed (", destination, ")")
 	}
 	return nil, E.Errors(errors...)
-}
-
-// cachedWinnerDialTimeout 决定单独尝试缓存胜出地址时使用的超时时间。
-func cachedWinnerDialTimeout(fallbackDelay time.Duration) time.Duration {
-	if fallbackDelay > 0 {
-		return fallbackDelay
-	}
-	return N.DefaultFallbackDelay
 }
 
 // dialConcurrentNetworkPreferred 在开启 tcp_concurrent 时保留 IPv4/IPv6 优先级:
