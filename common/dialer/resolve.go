@@ -106,7 +106,7 @@ func (d *resolveDialer) DialContext(ctx context.Context, network string, destina
 		return nil, err
 	}
 	if C.TCPConcurrent && len(addresses) > 1 {
-		return dialConcurrentNetworkPreferred(ctx, d.dialer, network, destination, addresses, d.queryOptions.Strategy == C.DomainStrategyPreferIPv6, d.fallbackDelay, destination.Fqdn)
+		return dialConcurrentNetworkPreferred(ctx, d.dialer, network, destination, addresses, d.queryOptions.Strategy == C.DomainStrategyPreferIPv6, d.fallbackDelay)
 	}
 	if d.parallel {
 		return N.DialParallel(ctx, d.dialer, network, destination, addresses, d.queryOptions.Strategy == C.DomainStrategyPreferIPv6, d.fallbackDelay)
