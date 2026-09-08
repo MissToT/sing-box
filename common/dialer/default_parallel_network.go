@@ -26,6 +26,10 @@ func DialSerialNetwork(ctx context.Context, dialer N.Dialer, network string, des
 		return parallelDialer.DialParallelNetwork(ctx, network, destination, destinationAddresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 	}
 	if C.TCPConcurrent && len(destinationAddresses) > 1 {
+		domain := ""
+		if destination.IsDomain() {
+			domain = destination.Fqdn
+		}
 		return dialConcurrentNetwork(ctx, dialer, network, destination, destinationAddresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay, domain)
 	}
 	var errors []error
