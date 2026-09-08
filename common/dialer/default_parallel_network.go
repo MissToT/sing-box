@@ -26,7 +26,7 @@ func DialSerialNetwork(ctx context.Context, dialer N.Dialer, network string, des
 		return parallelDialer.DialParallelNetwork(ctx, network, destination, destinationAddresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 	}
 	if C.TCPConcurrent && len(destinationAddresses) > 1 {
-		return dialConcurrentNetwork(ctx, dialer, network, destination, destinationAddresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
+		return dialConcurrentNetwork(ctx, dialer, network, destination, destinationAddresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay, domain)
 	}
 	var errors []error
 	if parallelDialer, isParallel := dialer.(ParallelInterfaceDialer); isParallel {
@@ -49,7 +49,25 @@ func DialSerialNetwork(ctx context.Context, dialer N.Dialer, network string, des
 	return nil, E.Errors(errors...)
 }
 
-func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.Conn, error) {
+func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration, domain string) (net.Conn, error) {
+	// 优先尝试上次竞速胜出的 IP,命中且成功则跳过全量并发竞速
+	if cachedAddr, ok := globalConcurrentWinnerCache.get(domain, destinationAddresses); ok {
+		var conn net.Conn
+		var err error
+		if parallelDialer, isParallel := dialer.(ParallelInterfaceDialer); isParallel {
+			conn, err = parallelDialer.DialParallelInterface(ctx, network, M.SocksaddrFrom(cachedAddr, destination.Port), strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
+		} else {
+			conn, err = dialer.DialContext(ctx, network, M.SocksaddrFrom(cachedAddr, destination.Port))
+		}
+		if err == nil {
+			if factory := service.FromContext[log.Factory](ctx); factory != nil {
+				factory.NewLogger("dialer").DebugContext(ctx, "winner (cached) ", cachedAddr, " (", destination, ")")
+			}
+			return conn, nil
+		}
+		// 缓存 IP 拨号失败,回退到全量并发竞速
+	}
+
 	type dialResult struct {
 		net.Conn
 		error
@@ -61,7 +79,7 @@ func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string,
 	dialCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	results := make(chan dialResult) // 无缓冲,修正泄漏问题
+	results := make(chan dialResult)
 
 	racer := func(address netip.Addr) {
 		var conn net.Conn
@@ -89,6 +107,7 @@ func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string,
 		res := <-results
 		if res.error == nil {
 			cancel()
+			globalConcurrentWinnerCache.set(domain, res.address)
 			if factory := service.FromContext[log.Factory](ctx); factory != nil {
 				factory.NewLogger("dialer").DebugContext(ctx, "winner ", res.address, " (", destination, ")")
 			}
@@ -106,7 +125,7 @@ func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string,
 // 若地址列表只包含单一地址族,直接退化为普通的 dialConcurrentNetwork;
 // 若同时包含两族地址,则按 preferIPv6 分为 primaries/fallbacks,
 // 先只对 primaries 发起并发竞速,超过 fallbackDelay 仍未成功时才追加对 fallbacks 的并发竞速。
-func dialConcurrentNetworkPreferred(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, preferIPv6 bool, fallbackDelay time.Duration) (net.Conn, error) {
+func dialConcurrentNetworkPreferred(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, preferIPv6 bool, fallbackDelay time.Duration, domain string) (net.Conn, error) {
 	addresses4 := common.Filter(destinationAddresses, func(address netip.Addr) bool {
 		return address.Is4() || address.Is4In6()
 	})
@@ -114,7 +133,7 @@ func dialConcurrentNetworkPreferred(ctx context.Context, dialer N.Dialer, networ
 		return address.Is6() && !address.Is4In6()
 	})
 	if len(addresses4) == 0 || len(addresses6) == 0 {
-		return dialConcurrentNetwork(ctx, dialer, network, destination, destinationAddresses, nil, nil, nil, fallbackDelay)
+		return dialConcurrentNetwork(ctx, dialer, network, destination, destinationAddresses, nil, nil, nil, fallbackDelay, domain)
 	}
 	if fallbackDelay == 0 {
 		fallbackDelay = N.DefaultFallbackDelay
@@ -142,7 +161,7 @@ func dialConcurrentNetworkPreferred(ctx context.Context, dialer N.Dialer, networ
 		if !primary {
 			ras = fallbacks
 		}
-		c, err := dialConcurrentNetwork(ctx, dialer, network, destination, ras, nil, nil, nil, fallbackDelay)
+		c, err := dialConcurrentNetwork(ctx, dialer, network, destination, ras, nil, nil, nil, fallbackDelay, domain)
 		select {
 		case results <- dialResult{Conn: c, error: err, primary: primary, done: true}:
 		case <-returned:
