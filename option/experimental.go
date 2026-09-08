@@ -12,6 +12,7 @@ type ExperimentalOptions struct {
 	V2RayAPI            *V2RayAPIOptions      `json:"v2ray_api,omitempty"`
 	Debug               *DebugOptions         `json:"debug,omitempty"`
 	URLTestUnifiedDelay bool                  `json:"urltest_unified_delay,omitempty"`
+	TCPConcurrent       bool                  `json:"tcp_concurrent,omitempty"`
 }
 
 type ObservabilityOptions struct {

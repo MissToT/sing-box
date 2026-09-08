@@ -6,6 +6,7 @@ import (
 )
 
 var URLTestUnifiedDelay = false
+var TCPConcurrent = false
 
 type InterfaceType uint8
 
