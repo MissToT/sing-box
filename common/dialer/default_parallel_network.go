@@ -113,14 +113,14 @@ func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string,
 			cancel()
 			globalConcurrentWinnerCache.set(domain, res.address)
 			if factory := service.FromContext[log.Factory](ctx); factory != nil {
-				factory.NewLogger("dialer").DebugContext(ctx, "concurrent dial [winner] ", res.address, " -> ", destination, " (total ", len(destinationAddresses), " IPs)")
+				factory.NewLogger("dialer").DebugContext(ctx, "concurrent dial [winner] ", res.address, " -> ", destination)
 			}
 			return res.Conn, nil
 		}
 		errors = append(errors, res.error)
 	}
 	if factory := service.FromContext[log.Factory](ctx); factory != nil {
-		factory.NewLogger("dialer").DebugContext(ctx, "concurrent dial [failed] all ", len(destinationAddresses), " IPs failed for ", destination)
+		factory.NewLogger("dialer").DebugContext(ctx, "concurrent dial [failed] all IPs failed for ", destination)
 	}
 	return nil, E.Errors(errors...)
 }
