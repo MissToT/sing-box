@@ -120,7 +120,7 @@ func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string,
 		errors = append(errors, res.error)
 	}
 	if factory := service.FromContext[log.Factory](ctx); factory != nil {
-		factory.NewLogger("dialer").WarnContext(ctx, "concurrent dial [failed] all ", len(destinationAddresses), " IPs failed for ", destination)
+		factory.NewLogger("dialer").DebugContext(ctx, "concurrent dial [failed] all ", len(destinationAddresses), " IPs failed for ", destination)
 	}
 	return nil, E.Errors(errors...)
 }
