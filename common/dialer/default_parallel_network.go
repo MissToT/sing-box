@@ -126,14 +126,14 @@ func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string,
 }
 
 // dialConcurrentNetworkPreferred 在开启 tcp_concurrent 时保留 IPv4/IPv6 优先级:
-func dialConcurrentNetworkPreferred(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, preferIPv6 bool, fallbackDelay time.Duration, domain string) (net.Conn, error) {
+func dialConcurrentNetworkPreferred(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, preferIPv6 *bool, fallbackDelay time.Duration, domain string) (net.Conn, error) {  
 	addresses4 := common.Filter(destinationAddresses, func(address netip.Addr) bool {
 		return address.Is4() || address.Is4In6()
 	})
 	addresses6 := common.Filter(destinationAddresses, func(address netip.Addr) bool {
 		return address.Is6() && !address.Is4In6()
 	})
-	if len(addresses4) == 0 || len(addresses6) == 0 {
+	if len(addresses4) == 0 || len(addresses6) == 0 || preferIPv6 == nil {  
 		return dialConcurrentNetwork(ctx, dialer, network, destination, destinationAddresses, nil, nil, nil, fallbackDelay, domain)
 	}
 	if fallbackDelay == 0 {
@@ -141,7 +141,7 @@ func dialConcurrentNetworkPreferred(ctx context.Context, dialer N.Dialer, networ
 	}
 
 	var primaries, fallbacks []netip.Addr
-	if preferIPv6 {
+	if *preferIPv6 {  
 		primaries, fallbacks = addresses6, addresses4
 	} else {
 		primaries, fallbacks = addresses4, addresses6
@@ -204,7 +204,7 @@ func dialConcurrentNetworkPreferred(ctx context.Context, dialer N.Dialer, networ
 	}
 }
 
-func DialParallelNetwork(ctx context.Context, dialer ParallelInterfaceDialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, preferIPv6 bool, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.Conn, error) {
+func DialParallelNetwork(ctx context.Context, dialer ParallelInterfaceDialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, preferIPv6 *bool, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.Conn, error) {
 	if len(destinationAddresses) == 0 {
 		if !destination.IsIP() {
 			panic("invalid usage")
@@ -225,11 +225,11 @@ func DialParallelNetwork(ctx context.Context, dialer ParallelInterfaceDialer, ne
 	addresses6 := common.Filter(destinationAddresses, func(address netip.Addr) bool {
 		return address.Is6() && !address.Is4In6()
 	})
-	if len(addresses4) == 0 || len(addresses6) == 0 {
+	if len(addresses4) == 0 || len(addresses6) == 0 || preferIPv6 == nil {
 		return DialSerialNetwork(ctx, dialer, network, destination, destinationAddresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 	}
 	var primaries, fallbacks []netip.Addr
-	if preferIPv6 {
+	if *preferIPv6 {
 		primaries = addresses6
 		fallbacks = addresses4
 	} else {
