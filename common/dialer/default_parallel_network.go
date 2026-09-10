@@ -65,7 +65,7 @@ func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string,
 		}
 		if err == nil {
 			if factory := service.FromContext[log.Factory](ctx); factory != nil {
-				factory.NewLogger("dialer").DebugContext(ctx, "concurrent dial [cache] ", cachedAddr, " -> ", destination)
+				factory.NewLogger("dialer").DebugContext(ctx, "hit cached ", cachedAddr, " -> ", destination)
 			}
 			return conn, nil
 		}
@@ -113,14 +113,14 @@ func dialConcurrentNetwork(ctx context.Context, dialer N.Dialer, network string,
 			cancel()
 			globalConcurrentWinnerCache.set(domain, res.address)
 			if factory := service.FromContext[log.Factory](ctx); factory != nil {
-				factory.NewLogger("dialer").DebugContext(ctx, "concurrent dial [winner] ", res.address, " -> ", destination)
+				factory.NewLogger("dialer").DebugContext(ctx, "won with ", res.address, " -> ", destination)
 			}
 			return res.Conn, nil
 		}
 		errors = append(errors, res.error)
 	}
 	if factory := service.FromContext[log.Factory](ctx); factory != nil {
-		factory.NewLogger("dialer").DebugContext(ctx, "concurrent dial [failed] all IPs failed for ", destination)
+		factory.NewLogger("dialer").DebugContext(ctx, "all attempts failed for ", destination)
 	}
 	return nil, E.Errors(errors...)
 }
