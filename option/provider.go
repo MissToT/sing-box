@@ -142,11 +142,37 @@ type ProviderInlineOptions struct {
 	HealthCheck ProviderHealthCheckOptions `json:"health_check,omitempty"`
 }
 
-type ProviderHealthCheckOptions struct {
+type _ProviderHealthCheckOptions struct {
 	Enabled  bool               `json:"enabled,omitempty"`
 	URL      string             `json:"url,omitempty"`
 	Interval badoption.Duration `json:"interval,omitempty"`
 	Timeout  badoption.Duration `json:"timeout,omitempty"`
+}
+
+type ProviderHealthCheckOptions _ProviderHealthCheckOptions
+
+func (o ProviderHealthCheckOptions) MarshalJSON() ([]byte, error) {
+	if o.URL == "" && o.Interval == 0 && o.Timeout == 0 {
+		return json.Marshal(o.Enabled)
+	}
+	return json.Marshal(_ProviderHealthCheckOptions(o))
+}
+
+func (o *ProviderHealthCheckOptions) UnmarshalJSON(bytes []byte) error {
+	err := json.Unmarshal(bytes, &o.Enabled)
+	if err == nil {
+		return nil
+	}
+	return json.UnmarshalDisallowUnknownFields(bytes, (*_ProviderHealthCheckOptions)(o))
+}
+
+func (o ProviderHealthCheckOptions) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
+	objectForm := schema.StrictObject()
+	err := builder.FlattenStruct(objectForm, reflect.TypeFor[ProviderHealthCheckOptions]())
+	if err != nil {
+		return nil, err
+	}
+	return schema.AnyOf(schema.BooleanNode(), objectForm), nil
 }
 
 type OverrideAnyTLSOptions struct {
