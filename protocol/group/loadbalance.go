@@ -364,7 +364,7 @@ func NewLoadBalanceGroup(ctx context.Context, outboundManager adapter.OutboundMa
 		return nil, E.New("missing URL test history storage")
 	}
 	if link == "" {
-		link = "https://www.gstatic.com/generate_204"
+		link = "https://captive.apple.com/generate_204"
 	}
 	loadBalanceGroup := &LoadBalanceGroup{
 		ctx:            ctx,
