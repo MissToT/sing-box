@@ -4,14 +4,99 @@ import (
 	"context"
 	"net"
 	"net/netip"
+	"sync"
 	"time"
 
 	C "github.com/sagernet/sing-box/constant"
+	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
+	"github.com/sagernet/sing/service"
 )
+
+type concurrentDialResult struct {
+	net.Conn
+	err     error
+	address netip.Addr
+}
+
+// dialNetworkAddress 拨单个候选地址，保留 network_strategy / 接口绑定语义。
+func dialNetworkAddress(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr, address netip.Addr,
+	strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType,
+	fallbackDelay time.Duration) (net.Conn, error) {
+	target := M.SocksaddrFrom(address, destination.Port)
+	if parallelDialer, isParallel := dialer.(ParallelInterfaceDialer); isParallel {
+		return parallelDialer.DialParallelInterface(ctx, network, target, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
+	}
+	return dialer.DialContext(ctx, network, target)
+}
+
+// dialConcurrentAddresses 批次内并发竞速：对同一批候选地址同时发起连接，返回最先成功者。
+// 语义对齐 mihomo 的 parallelDialContext —— 不设阶梯延迟、不设并发上限，
+// 只改变「一批地址如何被消费」；跨族顺序与回退延迟仍由 DialParallelNetwork / N.DialParallel 决定。
+func dialConcurrentAddresses(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr,
+	destinationAddresses []netip.Addr, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType,
+	fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.Conn, error) {
+	switch len(destinationAddresses) {
+	case 0:
+		return nil, E.New("missing destination address")
+	case 1:
+		return dialNetworkAddress(ctx, dialer, network, destination, destinationAddresses[0],
+			strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
+	}
+
+	dialCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	results := make(chan concurrentDialResult)
+	returned := make(chan struct{})
+	defer close(returned)
+
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(len(destinationAddresses))
+	for _, address := range destinationAddresses {
+		go func(address netip.Addr) {
+			defer waitGroup.Done()
+			conn, err := dialNetworkAddress(dialCtx, dialer, network, destination, address,
+				strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
+			select {
+			case results <- concurrentDialResult{Conn: conn, err: err, address: address}:
+			case <-returned:
+				if conn != nil {
+					_ = conn.Close()
+				}
+			}
+		}(address)
+	}
+	go func() {
+		waitGroup.Wait()
+		close(results)
+	}()
+
+	var dialErrors []error
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case result, loaded := <-results:
+			if !loaded {
+				if len(dialErrors) == 0 {
+					return nil, E.New("all candidates failed")
+				}
+				return nil, E.Errors(dialErrors...)
+			}
+			if result.err == nil {
+				if factory := service.FromContext[log.Factory](ctx); factory != nil {
+					factory.NewLogger("dialer").DebugContext(ctx, "concurrent dial winner ", result.address, " (", destination, ")")
+				}
+				return result.Conn, nil
+			}
+			dialErrors = append(dialErrors, result.err)
+		}
+	}
+}
 
 func DialSerialNetwork(ctx context.Context, dialer N.Dialer, network string, destination M.Socksaddr, destinationAddresses []netip.Addr, strategy *C.NetworkStrategy, interfaceType []C.InterfaceType, fallbackInterfaceType []C.InterfaceType, fallbackDelay time.Duration) (net.Conn, error) {
 	if len(destinationAddresses) == 0 {
@@ -22,6 +107,9 @@ func DialSerialNetwork(ctx context.Context, dialer N.Dialer, network string, des
 	}
 	if parallelDialer, isParallel := dialer.(ParallelNetworkDialer); isParallel {
 		return parallelDialer.DialParallelNetwork(ctx, network, destination, destinationAddresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
+	}
+	if C.TCPConcurrent && len(destinationAddresses) > 1 {
+		return dialConcurrentAddresses(ctx, dialer, network, destination, destinationAddresses, strategy, interfaceType, fallbackInterfaceType, fallbackDelay)
 	}
 	var errors []error
 	if parallelDialer, isParallel := dialer.(ParallelInterfaceDialer); isParallel {

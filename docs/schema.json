@@ -5283,6 +5283,9 @@
         },
         "urltest_unified_delay": {
           "type": "boolean"
+        },
+        "tcp_concurrent": {
+          "type": "boolean"  
         }
       },
       "additionalProperties": false
@@ -16469,22 +16472,29 @@
       ]
     },
     "ProviderHealthCheckOptions": {
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "type": "boolean"
+      "anyOf": [
+        {
+          "type": "boolean"  
         },
-        "url": {
-          "type": "string"
-        },
-        "interval": {
-          "$ref": "#/$defs/Duration"
-        },
-        "timeout": {
-          "$ref": "#/$defs/Duration"
+        {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "url": {
+              "type": "string"
+            },
+            "interval": {
+              "$ref": "#/$defs/Duration"
+            },
+            "timeout": {
+              "$ref": "#/$defs/Duration"
+            }
+          },
+          "additionalProperties": false
         }
-      },
-      "additionalProperties": false
+      ]
     },
     "RouteOptions": {
       "type": "object",

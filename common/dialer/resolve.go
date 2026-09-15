@@ -3,6 +3,7 @@ package dialer
 import (
 	"context"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -19,7 +20,19 @@ import (
 var (
 	_ N.Dialer                = (*resolveDialer)(nil)
 	_ ParallelInterfaceDialer = (*resolveParallelNetworkDialer)(nil)
+	_ N.ParallelDialer        = (*concurrentDialer)(nil)
 )
+
+// concurrentDialer 把 sing 库的 ParallelDialer 扩展点接到批次并发实现上：
+// N.DialSerial / N.DialParallel 检测到该接口后，会把一整批候选地址交给 DialParallel，
+// 族内拨号因此从「逐个尝试」变为「并发竞速」，跨族策略保持不变。
+type concurrentDialer struct {
+	N.Dialer
+}
+
+func (d *concurrentDialer) DialParallel(ctx context.Context, network string, destination M.Socksaddr, destinationAddresses []netip.Addr) (net.Conn, error) {
+	return dialConcurrentAddresses(ctx, d.Dialer, network, destination, destinationAddresses, nil, nil, nil, 0)
+}
 
 type ResolveDialer interface {
 	N.Dialer
@@ -104,10 +117,16 @@ func (d *resolveDialer) DialContext(ctx context.Context, network string, destina
 	if err != nil {
 		return nil, err
 	}
+	dialer := d.dialer
+	if C.TCPConcurrent && len(addresses) > 1 {
+		// 跨族策略不变：仍走 N.DialParallel / N.DialSerial，
+		// 仅通过 ParallelDialer 扩展点把「族内逐个尝试」替换为「族内并发竞速」。
+		dialer = &concurrentDialer{Dialer: d.dialer}
+	}
 	if d.parallel {
-		return N.DialParallel(ctx, d.dialer, network, destination, addresses, d.queryOptions.Strategy == C.DomainStrategyPreferIPv6, d.fallbackDelay)
+		return N.DialParallel(ctx, dialer, network, destination, addresses, d.queryOptions.Strategy == C.DomainStrategyPreferIPv6, d.fallbackDelay)
 	} else {
-		return N.DialSerial(ctx, d.dialer, network, destination, addresses)
+		return N.DialSerial(ctx, dialer, network, destination, addresses)
 	}
 }
 

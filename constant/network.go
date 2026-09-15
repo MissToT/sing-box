@@ -8,6 +8,7 @@ import (
 const UDPSocketBufferSize = 8 << 20
 
 var URLTestUnifiedDelay = false
+var TCPConcurrent = false
 
 type InterfaceType uint8
 
