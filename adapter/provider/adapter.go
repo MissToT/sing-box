@@ -56,6 +56,10 @@ func NewAdapter(ctx context.Context, router adapter.Router, outbound adapter.Out
 	if interval < time.Minute {
 		interval = time.Minute
 	}
+	enabled := true
+	if options.Enabled != nil {
+		enabled = *options.Enabled
+	}
 	return Adapter{
 		ctx:          ctx,
 		outbound:     outbound,
@@ -66,7 +70,7 @@ func NewAdapter(ctx context.Context, router adapter.Router, outbound adapter.Out
 		providerType: providerType,
 		providerTag:  providerTag,
 
-		enabled:  options.Enabled,
+		enabled:  enabled,
 		link:     options.URL,
 		timeout:  timeout,
 		interval: interval,
@@ -118,9 +122,9 @@ func (a *Adapter) resolveOutboundTags(newOpts []option.Outbound) []string {
 	for i, opt := range newOpts {
 		var baseTag string
 		if opt.Tag != "" {
-			baseTag = F.ToString(a.providerTag, "/", opt.Tag)
+			baseTag = F.ToString("[", a.providerTag, "] ", opt.Tag)
 		} else {
-			baseTag = F.ToString(a.providerTag, "/", i)
+			baseTag = F.ToString("[", a.providerTag, "] ", i)
 		}
 		tag := baseTag
 		for n := 2; seen[tag]; n++ {
@@ -302,13 +306,13 @@ func (a *Adapter) RewriteDetourForProvider(opts []option.Outbound, endpointOpts 
 	tagMapping := make(map[string]string)
 	for _, opt := range opts {
 		if opt.Tag != "" {
-			tagMapping[opt.Tag] = F.ToString(a.providerTag, "/", opt.Tag)
+			tagMapping[opt.Tag] = F.ToString("[", a.providerTag, "] ", opt.Tag)
 		}
 	}
 	for _, endpoints := range endpointOpts {
 		for _, opt := range endpoints {
 			if opt.Tag != "" {
-				tagMapping[opt.Tag] = F.ToString(a.providerTag, "/", opt.Tag)
+				tagMapping[opt.Tag] = F.ToString("[", a.providerTag, "] ", opt.Tag)
 			}
 		}
 	}
@@ -327,13 +331,13 @@ func (a *Adapter) RewriteDetourForProviderEndpoints(opts []option.Endpoint, outb
 	tagMapping := make(map[string]string)
 	for _, opt := range opts {
 		if opt.Tag != "" {
-			tagMapping[opt.Tag] = F.ToString(a.providerTag, "/", opt.Tag)
+			tagMapping[opt.Tag] = F.ToString("[", a.providerTag, "] ", opt.Tag)
 		}
 	}
 	for _, outbounds := range outboundOpts {
 		for _, opt := range outbounds {
 			if opt.Tag != "" {
-				tagMapping[opt.Tag] = F.ToString(a.providerTag, "/", opt.Tag)
+				tagMapping[opt.Tag] = F.ToString("[", a.providerTag, "] ", opt.Tag)
 			}
 		}
 	}
@@ -354,9 +358,9 @@ func (a *Adapter) resolveEndpointTags(newOpts []option.Endpoint) []string {
 	for i, opt := range newOpts {
 		var baseTag string
 		if opt.Tag != "" {
-			baseTag = F.ToString(a.providerTag, "/", opt.Tag)
+			baseTag = F.ToString("[", a.providerTag, "] ", opt.Tag)
 		} else {
-			baseTag = F.ToString(a.providerTag, "/endpoint-", i)
+			baseTag = F.ToString("[", a.providerTag, "] endpoint-", i)
 		}
 		tag := baseTag
 		for n := 2; seen[tag]; n++ {
