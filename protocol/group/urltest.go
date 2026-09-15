@@ -376,7 +376,7 @@ func NewURLTestGroup(ctx context.Context, outboundManager adapter.OutboundManage
 		interval = C.DefaultURLTestInterval
 	}
 	if tolerance == 0 {
-		tolerance = 50
+		tolerance = 100
 	}
 	if idleTimeout == 0 {
 		idleTimeout = C.DefaultURLTestIdleTimeout
