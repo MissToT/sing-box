@@ -9,6 +9,7 @@ icon: material/alert-decagram
     :material-plus: [default_http_client](#default_http_client)  
     :material-plus: [find_neighbor](#find_neighbor)  
     :material-plus: [dhcp_lease_files](#dhcp_lease_files)
+    :material-plus: [tcp_concurrent_dial](#tcp_concurrent_dial)
 
 !!! quote "Changes in sing-box 1.12.0"
 
@@ -50,6 +51,7 @@ icon: material/alert-decagram
     "default_network_type": [],
     "default_fallback_network_type": [],
     "default_fallback_delay": "",
+    "tcp_concurrent_dial": false,
     
     // Removed
 
@@ -194,3 +196,13 @@ See [Dial Fields](/configuration/shared/dial/#fallback_network_type) for details
 !!! question "Since sing-box 1.11.0"
 
 See [Dial Fields](/configuration/shared/dial/#fallback_delay) for details.
+
+#### tcp_concurrent_dial
+
+When enabled, TCP dials to a domain will resolve the dialed domain locally, dial all candidate IP addresses concurrently, and use the first successful connection.
+
+All candidate addresses race together regardless of their address family, so there is no primary/fallback order and `fallback_delay` is not used on this path.
+
+Concurrency is applied at the physical dialer: direct outbounds race the target IP addresses, while proxy outbounds race the IP addresses of their own servers. A domain target passed through a proxy protocol remains a domain and is resolved by the proxy server unless it is explicitly resolved by a route rule.
+
+UDP and QUIC traffic are not affected.
