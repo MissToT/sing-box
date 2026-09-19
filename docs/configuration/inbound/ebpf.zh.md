@@ -4,7 +4,7 @@ icon: material/lan-connect
 
 # eBPF
 
-!!! quote "sing-box 1.15.0 中的更改"
+!!! quote "sing-box 1.14.0 中的更改"
 
     eBPF 入站仍为实验功能，仅在带有 `with_ebpf` 编译标签的 Linux 和 Android
     构建中可用。
@@ -23,7 +23,6 @@ eBPF 入站不使用[监听字段](/zh/configuration/shared/listen/)。
   "network": ["tcp", "udp"],
   "udp_timeout": "5m",
   "tc_priority": 1,
-  "fakeip_icmp": "off",
   "bypass_rule_set": [],
   "local": {
     "enabled": true,
@@ -77,71 +76,7 @@ filter 协调顺序时修改。
 
 #### bypass_rule_set
 
-匹配这些规则集中目标 IP CIDR 的流量绕过此入站，非 IP 规则会被忽略。运行时更新只会
-在所有已启用数据面均接受新策略后生效；此前继续保留上一份已确认策略。若更新和补偿
-回滚均失败，`GET /ebpf` 会报告 `needs_attention`；此时应重启入站，使所有数据面按同一
-策略重新构建。
-
-#### fakeip_icmp
-
-| 值 | 行为 |
-| --- | --- |
-| `off` | 不响应发往 FakeIP 地址池的 ICMP Echo Request，默认值。 |
-| `reply` | 为发往已配置 FakeIP 地址池的 ICMP Echo Request 合成本地 Echo Reply。 |
-
-`reply` 从不代理 ICMP：它只识别发往 FakeIP 地址池的 ICMP Echo Request，并立即
-在本地原地合成 Echo Reply 作为响应，不会联系该请求 DNS 映射的真实目标。这使得
-FakeIP 地址能够响应 `ping`，部分客户端以此判断目标是否可达。回复的源地址、
-标识符、序列号和负载均与请求保持一致，且回复长度不会超过请求。因此该响应
-反映的不是被代理目标的可达性或往返延迟，而只是本机自身的本地响应时间。
-
-启用 `reply` 要求至少配置一个 FakeIP 前缀（IPv4 或 IPv6），并且至少存在下表中
-一种可用的接管路径。若配置了 `reply` 但没有可用路径，将在启动时报错并指明不受
-支持的组合，而不是静默失效。
-
-`reply` 仅响应目标 ICMP 报文中可验证的安全子集：无选项且未分片的 IPv4，以及
-前面没有扩展头的 IPv6 Echo。其余情况——包括分片报文、非 Echo 的 ICMP，或本对象
-无法完整安全解析的报文——均原样放行。
-
-##### 支持矩阵
-
-| 数据面 | `fakeip_icmp: reply` |
-| --- | --- |
-| `local.data_plane: tc` | 支持 |
-| `local.data_plane: cgroup` | 不支持本机流量 |
-| `shared.data_plane: socket_assign` | 支持 shared 客户端 |
-| `shared.data_plane: packet_rewrite` | 支持 shared 客户端 |
-
-`local.data_plane: cgroup` 通过在报文构造之前改写 socket 目标地址来实现接管，
-不挂载在任何网络接口上，因此没有可用来响应的位置——这是唯一被直接拒绝的组合。
-两种 shared 数据面都会在各自的接口上挂载同一个 responder 程序（分别通过各自的
-后端——`socket_assign` 用 `TCBackend`，`packet_rewrite` 用
-`SharedNetworkBackend`），因此任意一种都能单独响应 shared 客户端。
-
-只有当启用组合中仍包含 `local.data_plane: cgroup` 时，支持能力才按路径分别
-计算：
-
-- `local: cgroup` + 任一 shared 路径可以启动，但只响应 shared 客户端；本机
-  cgroup 内进程产生的流量不会收到 FakeIP ICMP 回复。
-
-本机流量需要使用 `local.data_plane: tc`。两种 shared 数据面都能响应 shared
-客户端；将 `local: tc` 与任一 shared 数据面组合即可覆盖两条路径。
-
-即使路径本身受支持，客户端仍需可用的源地址，以及能够将请求送到 responder 的路由。
-在 Android 上，移动数据和 Wi-Fi 之间的上游切换可能使热点撤销全局 IPv6 前缀和
-默认路由。IPv6 是否继续可用取决于设备和新的上游网络，不能仅凭连接了 Wi-Fi 就
-判断 IPv6 必然失效。
-
-`local.data_plane: tc` 在另一个方向上有对应的前提：`local_reply` 只能看到系统
-路由已经将 FakeIP IPv6 前缀内的目标发送到本机 TC 接口。匹配该前缀的路由或经过
-该接口的默认路由均可；没有可用路由时 sing-box 会记录警告。
-
-### 策略优先级
-
-程序首先处理协议选择、分片、DHCP/服务流量、自身绕过和强制安全地址绕过。随后，
-FakeIP 目标会在 DNS、UID/来源、端口、主机地址、私网地址和规则集绕过策略之前被强制
-接管。对于其他目标，DNS `off` 先绕过，DNS `hijack` 在 UID 或 shared 来源策略之前
-接管；DNS `respect_policy` 先应用 UID/来源策略，再在端口和目标地址绕过策略之前接管。
+匹配这些规则集中目标 IP CIDR 的流量绕过此入站，非 IP 规则会被忽略。
 
 ### local
 
@@ -164,10 +99,6 @@ FakeIP 目标会在 DNS、UID/来源、端口、主机地址、私网地址和�
 将 `data_plane: cgroup` 的接管范围限制到指定的绝对 cgroup v2 子树。省略时接管
 当前可见的 cgroup v2 根层级及其所有子 cgroup。它不是 sing-box 服务自身 cgroup
 的配置项，除非用户确实只希望接管该服务子树。
-
-在 Android 上，netd 可能在根 cgroup 使用独占 socket hook。sing-box 使用多程序
-挂载且不会替换已有的独占程序，但如果 sing-box 先挂载，netd 随后重新执行独占挂载，
-内核仍可能拒绝 netd。受影响的设备可改用 `local.data_plane: tc`。
 
 #### local.dns_mode
 
@@ -219,8 +150,8 @@ DoT 流量。
 #### local.bypass_port
 
 绕过本机接管的目标端口。local `tc` 和 `cgroup` 两种数据面均支持；启用的
-`network` 协议（TCP 和/或 UDP）分别适用。该选项只匹配目标端口。在强制安全门槛
-之后，FakeIP 始终强制接管。DNS 处理也优先于此设置：`hijack` 始终接管 53 端口，`respect_policy` 先应用
+`network` 协议（TCP 和/或 UDP）分别适用。该选项只匹配目标端口。FakeIP 始终强制
+接管。DNS 处理也优先于此设置：`hijack` 始终接管 53 端口，`respect_policy` 先应用
 UID 策略再处理 DNS，`off` 已经绕过 DNS。配置 53 端口时 sing-box 会在启动时告警。
 
 #### local.bypass_port_range
@@ -263,16 +194,6 @@ UID 策略再处理 DNS，`off` 已经绕过 DNS。配置 53 端口时 sing-box 
 
 启用 shared IPv6 接管，默认 `true`。禁用后，shared 接口上的 IPv6 流量绕过此入站。
 
-在 Android 上，`shared.ipv6: true` 只启用接管，不会为热点客户端分配 IPv6 地址
-或发送路由器通告。普通客户端使用 shared IPv6，依赖 Android 实际向客户端提供
-可用的 IPv6 地址和路由。若上游切换撤销了热点的全局前缀和默认路由，客户端的普通
-IPv6 连通性可能丢失，而 link-local 通信仍可能可用。启用 `shared.ipv6` 或
-`fakeip_icmp` 无法恢复这些已撤销的网络配置。
-
-已报告的移动数据上游实测支持 shared IPv4 和 IPv6。Wi-Fi 上游下能否双栈工作，
-仍取决于热点是否保留有效的 IPv6 配置和可用的交付路径，不能由上述 link-local
-诊断测试推导为已验证。仅撤销 IPv6 前缀或路由不会影响 shared IPv4。
-
 #### shared.bypass_private_address
 
 绕过私有和特殊用途目标地址，默认 `true`。
@@ -312,16 +233,6 @@ FakeIP 和 DNS 的优先级与 `local.bypass_port` 相同，配置 53 端口时�
     shared 模式不会启用 IP 转发，也不提供 NAT、DHCP、IPv6 路由器通告或热点管理。
     请在 Android、Linux 或路由器系统中配置这些功能。可以同时配置 Wi-Fi、USB
     网络共享等多个下游接口。
-
-### 诊断
-
-- `sing-box tools ebpf status` 探测当前内核所需的 eBPF 能力，不检查运行中的入站。
-- 启用 Clash API 且至少存在一个 eBPF 入站后，`GET /ebpf` 可查看运行中的
-  eBPF 入站、attachment、恢复状态、资源使用量与失败计数：
-
-  ```
-  curl -H "Authorization: Bearer $SECRET" http://127.0.0.1:9090/ebpf
-  ```
 
 ### 限制
 

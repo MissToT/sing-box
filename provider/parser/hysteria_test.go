@@ -18,10 +18,3 @@ func TestHysteriaBuildQUICOptions(t *testing.T) {
 	require.Equal(t, uint64(32768), options.StreamReceiveWindow.Value())
 	require.True(t, options.DisablePathMTUDiscovery)
 }
-
-func TestHysteriaBuildDefaultQUICOptions(t *testing.T) {
-	options := (&HysteriaOption{}).Build().(*option.HysteriaOutboundOptions)
-
-	require.Nil(t, options.ConnectionReceiveWindow)
-	require.Nil(t, options.StreamReceiveWindow)
-}

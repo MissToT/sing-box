@@ -5,8 +5,6 @@ import (
 	F "github.com/sagernet/sing/common/format"
 )
 
-const UDPSocketBufferSize = 8 << 20
-
 var URLTestUnifiedDelay = false
 
 type InterfaceType uint8

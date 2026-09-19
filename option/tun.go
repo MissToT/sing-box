@@ -51,11 +51,9 @@ type TunInboundOptions struct {
 	UDPMapping                    UDPNATBehavior                   `json:"udp_mapping,omitempty"`
 	UDPFiltering                  UDPNATBehavior                   `json:"udp_filtering,omitempty"`
 	UDPNATMax                     uint32                           `json:"udp_nat_max,omitempty"`
-	MultiQueue                    bool                             `json:"multi_queue,omitempty"`
+	Stack                         string                           `json:"stack,omitempty" enum:"system,gvisor,mixed"`
 	Platform                      *TunPlatformOptions              `json:"platform,omitempty"`
 	InboundOptions
-
-	Stack string `json:"stack,omitempty" schema:"omit"`
 
 	// Deprecated: removed
 	GSO bool `json:"gso,omitempty" schema:"omit"`

@@ -6,22 +6,20 @@ import (
 	"fmt"
 	"os"
 
-	commonEBPF "github.com/CHIZI-0618/sing-ebpf"
+	commonEBPF "github.com/sagernet/sing-box/common/ebpf"
 	"github.com/sagernet/sing-box/log"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	commandEBPFStatusMode       string
-	commandEBPFStatusLocal      string
-	commandEBPFStatusShared     string
-	commandEBPFStatusNetwork    []string
-	commandEBPFStatusInterface  string
-	commandEBPFStatusIPv6       bool
-	commandEBPFStatusJSON       bool
-	commandEBPFStatusFakeIPICMP bool
-	commandEBPFStatusProcess    bool
+	commandEBPFStatusMode      string
+	commandEBPFStatusLocal     string
+	commandEBPFStatusShared    string
+	commandEBPFStatusNetwork   []string
+	commandEBPFStatusInterface string
+	commandEBPFStatusIPv6      bool
+	commandEBPFStatusJSON      bool
 )
 
 var commandEBPF = &cobra.Command{
@@ -48,8 +46,6 @@ func init() {
 	commandEBPFStatus.Flags().StringVar(&commandEBPFStatusInterface, "interface", "", "Configured shared interface")
 	commandEBPFStatus.Flags().BoolVar(&commandEBPFStatusIPv6, "ipv6", true, "Inspect IPv6 support for the selected data path")
 	commandEBPFStatus.Flags().BoolVar(&commandEBPFStatusJSON, "json", false, "Write the report as JSON")
-	commandEBPFStatus.Flags().BoolVar(&commandEBPFStatusFakeIPICMP, "fakeip-icmp", false, "Also inspect fakeip_icmp=reply support")
-	commandEBPFStatus.Flags().BoolVar(&commandEBPFStatusProcess, "process-tracking", false, "Also inspect optional process tracking support")
 	commandEBPF.AddCommand(commandEBPFStatus)
 	commandTools.AddCommand(commandEBPF)
 }
@@ -61,15 +57,12 @@ func runEBPFStatus() error {
 		interfaceNames = []string{commandEBPFStatusInterface}
 	}
 	report, err := commonEBPF.ProbeKernel(commonEBPF.KernelProbeOptions{
-		Mode:                mode,
-		LocalDataPlane:      commonEBPF.KernelProbeDataPlane(commandEBPFStatusLocal),
-		SharedDataPlane:     commonEBPF.KernelProbeDataPlane(commandEBPFStatusShared),
-		Network:             commandEBPFStatusNetwork,
-		InterfaceNames:      interfaceNames,
-		EnableIPv6:          commandEBPFStatusIPv6,
-		ICMPEchoReply:       commandEBPFStatusFakeIPICMP,
-		NeedProcessTracking: commandEBPFStatusProcess,
-		VerifyObjectLoad:    true,
+		Mode:            mode,
+		LocalDataPlane:  commonEBPF.KernelProbeDataPlane(commandEBPFStatusLocal),
+		SharedDataPlane: commonEBPF.KernelProbeDataPlane(commandEBPFStatusShared),
+		Network:         commandEBPFStatusNetwork,
+		InterfaceNames:  interfaceNames,
+		EnableIPv6:      commandEBPFStatusIPv6,
 	})
 	if err != nil {
 		return err

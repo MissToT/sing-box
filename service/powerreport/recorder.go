@@ -342,29 +342,13 @@ func (r *Recorder) RecordPauseEvent(event int) {
 	}
 }
 
-func (r *Recorder) RecordScreenState(on bool) {
-	if on {
-		r.recordPlatformEvent(eventTypeScreenOn)
-	} else {
-		r.recordPlatformEvent(eventTypeScreenOff)
-	}
-}
-
-func (r *Recorder) RecordLockState(locked bool) {
-	if locked {
-		r.recordPlatformEvent(eventTypeDeviceLock)
-	} else {
-		r.recordPlatformEvent(eventTypeDeviceUnlock)
-	}
-}
-
 func (r *Recorder) CountConnectionOpened() {
 	r.connectionsOpened.Add(1)
 }
 
 // The service log prefixes each line with whole monotonic seconds since createdAt, so a
 // line at [N] sits at logBaseMonoMS + N*1000 on the monoMS axis of events and timeline rows.
-func (r *Recorder) RecordServiceStart(createdAt time.Time, reload bool) {
+func (r *Recorder) RecordServiceStart(createdAt time.Time) {
 	now := time.Now()
 	r.access.Lock()
 	if !r.started || r.closed {
@@ -373,7 +357,6 @@ func (r *Recorder) RecordServiceStart(createdAt time.Time, reload bool) {
 	}
 	event := r.newEvent(eventTypeService, now)
 	event.LogBaseMonoMS = int64(createdAt.Sub(r.baseTime) / time.Millisecond)
-	event.Reload = reload
 	r.events = append(r.events, event)
 	r.access.Unlock()
 	r.notifyWorker()

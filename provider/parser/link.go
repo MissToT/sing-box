@@ -112,48 +112,13 @@ func shadowsocksPluginOptions(plugin string) string {
 }
 
 func v2rayTransportWsPath(WebsocketOptions *option.V2RayWebsocketOptions, path string) {
-	WebsocketOptions.Path = path
-	rawPath, fragment, hasFragment := strings.Cut(path, "#")
-	basePath, rawQuery, hasQuery := strings.Cut(rawPath, "?")
-	if !hasQuery {
-		return
+	reg := regexp.MustCompile(`^(.*?)(?:\?ed=(\d*))?$`)
+	result := reg.FindStringSubmatch(path)
+	WebsocketOptions.Path = result[1]
+	if result[2] != "" {
+		WebsocketOptions.EarlyDataHeaderName = "Sec-WebSocket-Protocol"
+		WebsocketOptions.MaxEarlyData = StringToType[uint32](result[2])
 	}
-	var maxEarlyData uint64
-	var found bool
-	parameters := strings.Split(rawQuery, "&")
-	remaining := make([]string, 0, len(parameters))
-	for _, parameter := range parameters {
-		rawKey, rawValue, _ := strings.Cut(parameter, "=")
-		key, err := url.QueryUnescape(rawKey)
-		if err != nil || key != "ed" {
-			remaining = append(remaining, parameter)
-			continue
-		}
-		if !found {
-			value, err := url.QueryUnescape(rawValue)
-			if err != nil {
-				return
-			}
-			maxEarlyData, err = strconv.ParseUint(value, 10, 32)
-			if err != nil {
-				return
-			}
-			found = true
-		}
-	}
-	if !found {
-		return
-	}
-	// Preserve the ordering and encoding of all other query parameters.
-	WebsocketOptions.Path = basePath
-	if len(remaining) > 0 {
-		WebsocketOptions.Path += "?" + strings.Join(remaining, "&")
-	}
-	if hasFragment {
-		WebsocketOptions.Path += "#" + fragment
-	}
-	WebsocketOptions.EarlyDataHeaderName = "Sec-WebSocket-Protocol"
-	WebsocketOptions.MaxEarlyData = uint32(maxEarlyData)
 }
 
 func v2rayTransportWs(host string, path string) option.V2RayWebsocketOptions {

@@ -174,15 +174,6 @@ var OptionImplicitDefaultHTTPClient = Note{
 	EnvName:           "IMPLICIT_DEFAULT_HTTP_CLIENT",
 }
 
-var OptionTunStack = Note{
-	Name:              "tun-stack",
-	Description:       "`stack` option in TUN",
-	DeprecatedVersion: "1.15.0",
-	ScheduledVersion:  "1.17.0",
-	EnvName:           "TUN_STACK",
-	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-tun-stack",
-}
-
 var Options = []Note{
 	OptionOutboundDNSRuleItem,
 	OptionMissingDomainResolver,
@@ -197,5 +188,4 @@ var Options = []Note{
 	OptionLegacyClashAPIExternalUIDownloadDetour,
 	OptionLegacyProviderDownloadDetour,
 	OptionImplicitDefaultHTTPClient,
-	OptionTunStack,
 }

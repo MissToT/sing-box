@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing-box/common/interrupt"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
@@ -64,7 +63,7 @@ func (s *Server) downloadExternalUI() error {
 	if s.lastEtag != "" {
 		request.Header.Set("If-None-Match", s.lastEtag)
 	}
-	response, err := httpClient.Do(request.WithContext(interrupt.ContextWithIsResourceDownload(s.ctx)))
+	response, err := httpClient.Do(request.WithContext(s.ctx))
 	if err != nil {
 		return err
 	}

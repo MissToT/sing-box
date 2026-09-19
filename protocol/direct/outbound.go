@@ -33,7 +33,6 @@ func RegisterOutbound(registry *outbound.Registry) {
 var (
 	_ N.ParallelDialer                   = (*Outbound)(nil)
 	_ dialer.ParallelNetworkDialer       = (*Outbound)(nil)
-	_ dialer.ConcurrentNetworkDialer  = (*Outbound)(nil)
 	_ dialer.DirectDialer                = (*Outbound)(nil)
 	_ adapter.FlowOutbound               = (*Outbound)(nil)
 	_ adapter.FlowOutboundDomainResolver = (*Outbound)(nil)
@@ -106,11 +105,7 @@ func (h *Outbound) Start(stage adapter.StartStage) error {
 }
 
 func (h *Outbound) fetchMyAddresses() {
-	interfaceMonitor := h.network.InterfaceMonitor()
-	if interfaceMonitor == nil {
-		return
-	}
-	myInterfaceNames := interfaceMonitor.MyInterfaces()
+	myInterfaceNames := h.network.InterfaceMonitor().MyInterfaces()
 	if len(myInterfaceNames) == 0 {
 		return
 	}
@@ -279,7 +274,7 @@ func (h *Outbound) DialParallel(ctx context.Context, network string, destination
 	case C.DomainStrategyPreferIPv6:
 		preferIPv6 = len(destinationAddresses) > 0
 	}
-	conn, err := dialer.DialParallelNetwork(ctx, h.dialer, network, destination, destinationAddresses, len(destinationAddresses) > 0 && destinationAddresses[0].Is6(), nil, nil, nil, h.fallbackDelay)
+	conn, err := dialer.DialParallelNetwork(ctx, h.dialer, network, destination, destinationAddresses, preferIPv6, nil, nil, nil, h.fallbackDelay)
 	if err != nil {
 		return nil, err
 	}

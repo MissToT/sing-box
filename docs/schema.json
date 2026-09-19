@@ -6563,13 +6563,6 @@
             },
             "shared": {
               "$ref": "#/$defs/EBPFSharedOptions"
-            },
-            "fakeip_icmp": {
-              "type": "string",
-              "enum": [
-                "off",
-                "reply"
-              ]
             }
           },
           "required": [
@@ -8687,8 +8680,13 @@
               "minimum": 0,
               "maximum": 4294967295
             },
-            "multi_queue": {
-              "type": "boolean"
+            "stack": {
+              "type": "string",
+              "enum": [
+                "system",
+                "gvisor",
+                "mixed"
+              ]
             },
             "platform": {
               "$ref": "#/$defs/TunPlatformOptions"
@@ -16584,9 +16582,6 @@
         },
         "default_fallback_delay": {
           "$ref": "#/$defs/Duration"
-        },
-        "tcp_concurrent_dial": {
-          "type": "boolean"
         },
         "default_http_client": {
           "type": "string"

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"syscall"
 
-	commonEBPF "github.com/CHIZI-0618/sing-ebpf"
 	"github.com/sagernet/sing-box/adapter"
+	commonEBPF "github.com/sagernet/sing-box/common/ebpf"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/control"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -64,48 +64,33 @@ func (i *Inbound) NewConnection(
 }
 
 func (i *Inbound) NewPacket(buffer *buf.Buffer, oob []byte, source M.Socksaddr) {
-	i.handlePacket(buffer, oob, source, false)
-}
-
-func (i *Inbound) handlePacket(buffer *buf.Buffer, oob []byte, source M.Socksaddr, takeOwnership bool) bool {
 	if i.localCgroupEnabled() {
 		if redirectAddress, err := redirectAddressFromOOB(oob); err == nil && i.isCgroupRedirectAddress(redirectAddress) {
-			return i.newCgroupPacket(buffer, oob, source, takeOwnership)
+			i.newCgroupPacket(buffer, oob, source)
+			return
 		}
 	}
 	backend := i.tcBackend()
 	if backend == nil {
-		return false
-	}
-	return i.newTCPacket(backend, buffer, oob, source, takeOwnership)
-}
-
-func (i *Inbound) NewOOBPacketBatch(buffers []*buf.Buffer, oobs [][]byte, sources []M.Socksaddr) {
-	if len(buffers) != len(oobs) || len(buffers) != len(sources) {
-		buf.ReleaseMulti(buffers)
 		return
 	}
-	for index, buffer := range buffers {
-		if !i.handlePacket(buffer, oobs[index], sources[index], true) {
-			buffer.Release()
-		}
-	}
+	i.newTCPacket(backend, buffer, oob, source)
 }
 
-func (i *Inbound) newCgroupPacket(buffer *buf.Buffer, oob []byte, source M.Socksaddr, takeOwnership bool) bool {
+func (i *Inbound) newCgroupPacket(buffer *buf.Buffer, oob []byte, source M.Socksaddr) {
 	redirectAddress, _, _, err := packetDestinationsFromOOB(oob)
 	if err != nil {
 		i.udpWarnings.packetInfo.warn(i.logger, "read cgroup eBPF UDP redirect address: ", err)
-		return false
+		return
 	}
 	backend := i.cgroupBackendInstance()
 	if backend == nil || !i.isCgroupRedirectAddress(redirectAddress) {
 		i.udpWarnings.originalDestination.warn(i.logger, "cgroup eBPF UDP redirect address is not owned: ", redirectAddress)
-		return false
+		return
 	}
 	client := source.AddrPort()
 	redirectDestination := netip.AddrPortFrom(redirectAddress, i.listeners.selectedPort())
-	key, original, loaded := i.udpClientTable.cachedCgroupOriginal(client, redirectAddress)
+	original, loaded := i.udpClientTable.cachedCgroupOriginal(client, redirectAddress)
 	if !loaded {
 		original, err = backend.LookupOriginal(commonEBPF.ProtocolUDP, redirectDestination)
 		if errors.Is(err, unix.ENOENT) {
@@ -116,21 +101,11 @@ func (i *Inbound) newCgroupPacket(buffer *buf.Buffer, oob []byte, source M.Socks
 		}
 		if err != nil {
 			i.udpWarnings.originalDestination.warn(i.logger, "lookup cgroup eBPF UDP original destination: ", err)
-			return false
+			return
 		}
-		key = udpSessionKey{
-			Source:       client,
-			Scope:        udpSessionScopeLocalCgroup,
-			SocketCookie: original.SocketCookie,
-		}
-		i.udpClientTable.setCgroupBinding(key, original, redirectAddress)
+		i.udpClientTable.setCgroupBinding(client, original, redirectAddress)
 	}
-	if takeOwnership {
-		i.udpNat.NewPacketBuffer(key, buffer, source, M.SocksaddrFromNetIP(original.Destination), nil)
-		return true
-	}
-	i.udpNat.NewPacket(key, [][]byte{buffer.Bytes()}, source, M.SocksaddrFromNetIP(original.Destination), nil)
-	return false
+	i.udpNat.NewPacket([][]byte{buffer.Bytes()}, source, M.SocksaddrFromNetIP(original.Destination), original.ConnectedUDP)
 }
 
 func (i *Inbound) NewPacketConnectionEx(
@@ -146,8 +121,7 @@ func (i *Inbound) NewPacketConnectionEx(
 		Source:      source,
 		Destination: destination,
 	}
-	key, keyLoaded := udpSessionKeyFromContext(ctx)
-	if clientState, loaded := i.udpClientTable.load(key); keyLoaded && loaded {
+	if clientState, loaded := i.udpClientTable.load(source.AddrPort()); loaded {
 		metadata.SourceMACAddress = clientState.sourceMACAddress()
 		metadata.ProcessInfo = i.lookupProcessInfo(clientState.processSocketCookie())
 		if binding, found := clientState.redirectBinding(destination.AddrPort()); found {
@@ -158,16 +132,11 @@ func (i *Inbound) NewPacketConnectionEx(
 }
 
 func (i *Inbound) preparePacketConnection(
-	key udpSessionKey,
 	source M.Socksaddr,
 	destination M.Socksaddr,
 	_ any,
 ) (bool, context.Context, N.PacketWriter, N.CloseHandlerFunc) {
-	ok, ctx, writer, onClose := i.prepareTCPacketConnection(source, destination, key)
-	if ok {
-		ctx = context.WithValue(ctx, udpNATContextKey{}, key)
-	}
-	return ok, ctx, writer, onClose
+	return i.prepareTCPacketConnection(source, destination)
 }
 
 func (i *Inbound) socketControl(ipv6Listener bool) control.Func {

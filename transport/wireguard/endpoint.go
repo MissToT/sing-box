@@ -325,16 +325,6 @@ func (e *Endpoint) ensureDeviceStarted(ctx context.Context) error {
 	if err := e.waitNetworkActive(ctx); err != nil {
 		return err
 	}
-	return e.startDevice()
-}
-
-func (e *Endpoint) startDevice() error {
-	if isDone(e.done) {
-		return net.ErrClosed
-	}
-	if e.isPaused() {
-		return errNetworkPaused
-	}
 	e.stateAccess.Lock()
 	defer e.stateAccess.Unlock()
 	select {
@@ -346,7 +336,7 @@ func (e *Endpoint) startDevice() error {
 	if wgDevice == nil {
 		return net.ErrClosed
 	}
-	if e.isPaused() {
+	if e.pause != nil && e.pause.IsPaused() {
 		return errNetworkPaused
 	}
 	e.suspended.Store(false)
@@ -354,16 +344,17 @@ func (e *Endpoint) startDevice() error {
 }
 
 func (e *Endpoint) waitNetworkActive(ctx context.Context) error {
-	if !e.isPaused() {
+	pauseManager := e.pause
+	if pauseManager == nil || !pauseManager.IsPaused() {
 		return nil
 	}
 	timer := time.NewTimer(networkPauseGracePeriod)
 	defer timer.Stop()
-	for e.isPaused() {
+	for pauseManager.IsPaused() {
 		e.pauseAccess.Lock()
 		updated := e.pauseUpdated
 		e.pauseAccess.Unlock()
-		if !e.isPaused() {
+		if !pauseManager.IsPaused() {
 			return nil
 		}
 		select {
@@ -375,17 +366,12 @@ func (e *Endpoint) waitNetworkActive(ctx context.Context) error {
 			return net.ErrClosed
 		case <-updated:
 		case <-timer.C:
-			if e.isPaused() {
+			if pauseManager.IsPaused() {
 				return errNetworkPaused
 			}
 		}
 	}
 	return nil
-}
-
-func (e *Endpoint) isPaused() bool {
-	// These accessors use atomic state, unlike the pause manager's channel-based IsPaused.
-	return e.pause != nil && (e.pause.IsDevicePaused() || e.pause.IsNetworkPaused())
 }
 
 func (e *Endpoint) notifyPauseUpdated() {
@@ -427,12 +413,12 @@ func (e *Endpoint) Lookup(address netip.Addr) *device.Peer {
 }
 
 func (e *Endpoint) BindUpdate() error {
-	if e.isPaused() {
+	if e.pause != nil && e.pause.IsPaused() {
 		return nil
 	}
 	e.stateAccess.Lock()
 	defer e.stateAccess.Unlock()
-	if e.isPaused() {
+	if e.pause != nil && e.pause.IsPaused() {
 		return nil
 	}
 	wgDevice := e.device.Load()
@@ -455,11 +441,9 @@ func (e *Endpoint) onPauseUpdated(event int) {
 	case pause.EventNetworkPause:
 		e.networkPaused = true
 		err = wgDevice.Down()
-	case pause.EventNetworkWake, pause.EventDeviceWake:
-		if event == pause.EventNetworkWake {
-			e.networkPaused = false
-		}
-		if e.isPaused() || e.suspended.Load() {
+	case pause.EventNetworkWake:
+		e.networkPaused = false
+		if e.pause.IsPaused() || e.suspended.Load() {
 			return
 		}
 		err = wgDevice.Up()

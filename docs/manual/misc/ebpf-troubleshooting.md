@@ -30,19 +30,6 @@ exits non-zero when a required capability is missing or cannot be verified.
 For a configuration that enables both paths, pass both data-plane flags in one
 command. Run probes with the same privileges as the service.
 
-7. If a Clash API server is configured, the running-instance report from
-   `GET /ebpf` (see [eBPF configuration](/configuration/inbound/ebpf/#diagnostics)):
-
-```sh
-curl -H "Authorization: Bearer $SECRET" http://127.0.0.1:9090/ebpf
-```
-
-This is distinct from item 6's capability probe: it reports what the running
-inbound is actually doing (attachments, pending recovery, recent errors,
-counters), not what the kernel could theoretically support. Include it
-whenever the report concerns whether interception is actually happening,
-rather than whether the kernel supports it.
-
 Useful platform information:
 
 ```sh
@@ -75,20 +62,19 @@ log that stops before the fault.
 
 ## Logs and runtime state
 
-A successful startup emits a brief `eBPF inbound started` summary at Debug
-level: enabled paths, each attachment's actual interface and mechanism, any
-path still waiting for an interface, and what `fakeip_icmp` actually covers.
-Debug logging also includes an `eBPF cgroup active` or `eBPF TC active` summary containing the
-selected data planes and their effective runtime paths. TC summaries also include the default interface, attachments,
+At Debug log level, a successful startup emits an `eBPF cgroup active` or
+`eBPF TC active` summary containing the selected data planes and their effective
+runtime paths. TC summaries also include the default interface, attachments,
 internal listeners, routing state, and delivery interface when applicable. Each
 attachment includes its local/shared role and framing. A network event emits a
 Debug entry only when attachments or managed network state are changed; repair
 failures produce rate-limited warnings. Userspace handoff failures produce
 rate-limited Warn or Error entries. BPF packet return paths do not emit
-per-packet logs. Interface lifecycle handling is event-driven with a
-low-frequency drift check for silent kernel-state changes. Shared
-`packet_rewrite` runs bounded maintenance when flow events, release deadlines,
-or map pressure require it. These tasks do not emit periodic status records.
+per-packet logs, and interface lifecycle handling does not use periodic polling.
+Shared `packet_rewrite` runs a bounded adaptive sweep to reclaim orphaned flow
+state. Normal pressure scans are requested by flow-state events; a low-frequency
+watchdog also checks for kernel-only orphans that userspace cannot observe. This
+maintenance does not emit periodic status records.
 
 If the log reports an assignment or UDP original-destination failure, retain
 the complete log around the first error and collect the TC attachment state

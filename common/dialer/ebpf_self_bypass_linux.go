@@ -5,8 +5,8 @@ package dialer
 import (
 	"syscall"
 
-	commonEBPF "github.com/CHIZI-0618/sing-ebpf"
 	"github.com/sagernet/sing-box/adapter"
+	commonEBPF "github.com/sagernet/sing-box/common/ebpf"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common/control"
@@ -52,15 +52,12 @@ func PrepareEBPFSelfBypass(networkManager adapter.NetworkManager, inbounds []opt
 	return nil
 }
 
-// AppendEBPFSelfBypass appends the eBPF self-bypass registration callback to a
-// socket control chain. It is also used by integrations that create sockets
-// outside DefaultDialer, such as endpoint-specific network stacks.
-func AppendEBPFSelfBypass(networkManager adapter.NetworkManager, controlFunc control.Func) control.Func {
+func appendEBPFSelfBypass(networkManager adapter.NetworkManager, dialerControl, listenerControl control.Func) (control.Func, control.Func) {
 	provider, loaded := networkManager.(interface {
 		EBPFSelfBypass() *commonEBPF.SelfBypass
 	})
 	if !loaded {
-		return controlFunc
+		return dialerControl, listenerControl
 	}
 	selfBypassFunc := func(_ string, _ string, rawConn syscall.RawConn) error {
 		tracker := provider.EBPFSelfBypass()
@@ -69,9 +66,5 @@ func AppendEBPFSelfBypass(networkManager adapter.NetworkManager, controlFunc con
 		}
 		return tracker.RegisterSocket(rawConn)
 	}
-	return control.Append(controlFunc, selfBypassFunc)
-}
-
-func appendEBPFSelfBypass(networkManager adapter.NetworkManager, dialerControl, listenerControl control.Func) (control.Func, control.Func) {
-	return AppendEBPFSelfBypass(networkManager, dialerControl), AppendEBPFSelfBypass(networkManager, listenerControl)
+	return control.Append(dialerControl, selfBypassFunc), control.Append(listenerControl, selfBypassFunc)
 }

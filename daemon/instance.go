@@ -42,7 +42,6 @@ type Instance struct {
 func (s *StartedService) CheckConfig(ctx context.Context, configContent string) error {
 	selectedLocale := locale.FromContext(ctx)
 	ctx, _ = locale.ContextWithLocale(s.ctx, selectedLocale.Locale)
-	ctx = service.ExtendContext(ctx)
 	options, err := parseConfig(ctx, configContent)
 	if err != nil {
 		return err
@@ -82,7 +81,7 @@ type OverrideOptions struct {
 	ExcludePackage []string
 }
 
-func (s *StartedService) newInstance(ctx context.Context, profileContent string, overrideOptions *OverrideOptions, reloading bool) (*Instance, error) {
+func (s *StartedService) newInstance(ctx context.Context, profileContent string, overrideOptions *OverrideOptions) (*Instance, error) {
 	selectedLocale := locale.FromContext(ctx)
 	ctx, _ = locale.ContextWithLocale(s.ctx, selectedLocale.Locale)
 	ctx = service.ExtendContext(ctx)
@@ -138,7 +137,7 @@ func (s *StartedService) newInstance(ctx context.Context, profileContent string,
 	i.clashMode = service.PtrFromContext[clashmode.Manager](ctx)
 	i.trafficManager = service.PtrFromContext[trafficcontrol.Manager](ctx)
 	i.pauseManager = service.FromContext[pause.Manager](ctx)
-	i.registerPowerReport(ctx, reloading)
+	i.registerPowerReport(ctx)
 	i.cacheFile = service.FromContext[adapter.CacheFile](ctx)
 	i.outboundManager = service.FromContext[adapter.OutboundManager](ctx)
 	i.endpointManager = service.FromContext[adapter.EndpointManager](ctx)
@@ -176,14 +175,14 @@ func (i *Instance) Close() error {
 	return i.instance.Close()
 }
 
-func (i *Instance) registerPowerReport(ctx context.Context, reloading bool) {
+func (i *Instance) registerPowerReport(ctx context.Context) {
 	powerManager := service.FromContext[*powerreport.Manager](ctx)
 	if powerManager == nil {
 		return
 	}
 	recorder := powerManager.Recorder()
 	if recorder != nil {
-		recorder.RecordServiceStart(i.instance.CreatedAt(), reloading)
+		recorder.RecordServiceStart(i.instance.CreatedAt())
 	}
 	if i.pauseManager == nil {
 		return

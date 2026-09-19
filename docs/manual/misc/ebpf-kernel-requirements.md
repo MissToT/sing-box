@@ -155,8 +155,7 @@ Loopback and unrecognized link encapsulations are not supported.
 Local attachments follow default-interface changes. Configured shared
 interfaces are attached when present, except while an interface is acting as the
 current default upstream. Link and route events trigger validation and repair of
-managed attachments and network state. A low-frequency drift check also repairs
-kernel state changed without a matching netlink notification.
+managed attachments and network state; no periodic polling is used.
 
 One sing-box eBPF inbound may manage an interface at a time. Existing unrelated
 `clsact` filters are preserved, but a conflicting sing-box filter handle or
@@ -164,16 +163,6 @@ interface lock prevents startup.
 
 The local TC delivery veth requires writable per-interface IPv4 sysctls under
 `/proc/sys/net/ipv4/conf`. Original values are restored during cleanup.
-
-## Runtime policy updates
-
-`bypass_rule_set` updates are applied transactionally across active data
-planes. A failed update reverts already-updated backends and retries with
-bounded exponential backoff while their state remains usable. If an internal
-rollback fails and a backend disables itself as requiring rebuild, retries stop
-and runtime diagnostics report `needs_attention`; restart the inbound to build
-a fresh backend. This is not a traffic-policy "fail closed" mode: disabling an
-untrusted backend avoids running with mismatched maps and control flags.
 
 ## Probe
 
@@ -196,21 +185,16 @@ TC or `socket_assign` paths.
 
 The probe uses the selected protocols, address families, data planes, and shared interface.
 For local TC mode it reports the required TC socket-cookie helper and the optional
-cgroup socket-cookie hooks. Add `--process-tracking` to inspect the optional
-socket-address process tracker and socket-release cleanup capabilities. A real
-startup determines whether the process cgroup is
+cgroup socket-cookie hooks. It also reports the optional socket-address process
+tracker capabilities. A real startup determines whether the process cgroup is
 exclusive and uses cgroup registration when possible, otherwise enabling the
 userspace cookie registration path.
-The command also loads and immediately closes the generated eBPF objects selected
-by these options. This validates their real map ABI and verifier-visible program
-variants without attaching them.
 It reports `FAIL` for a conclusive missing facility and `UNKNOWN` when the
 process cannot determine a facility, such as when a security policy denies the
 probe. Both statuses make the command exit non-zero for required checks.
 Repeat it with the same privileges used to run sing-box. A real startup remains
-necessary because the non-mutating probe does not attach TC filters or cgroup
-hooks, create a veth, install routes, or change sysctls; those operations are
-checked and fail during startup.
+necessary because the non-mutating probe does not attach TC filters, create a
+veth, or change sysctls; those operations are checked and fail during startup.
 Use `--ipv6=false` when the intended configuration disables IPv6.
 
 ## Packet limitations

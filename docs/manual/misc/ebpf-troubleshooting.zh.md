@@ -25,17 +25,6 @@ sing-box tools ebpf status --shared-data-plane packet_rewrite --interface br-lan
 
 同时启用两条路径的配置可在同一条命令中传入两个 data-plane 参数。探测权限应与服务实际运行权限一致。
 
-7. 若配置了 Clash API 服务器，还请提供 `GET /ebpf` 的运行实例报告（参见
-   [eBPF 配置](/zh/configuration/inbound/ebpf/#诊断)）：
-
-```sh
-curl -H "Authorization: Bearer $SECRET" http://127.0.0.1:9090/ebpf
-```
-
-这与第 6 项的能力探测不同：它报告的是运行中的入站实际在做什么（attachment、
-待处理的恢复、最近的错误、计数器），而不是内核理论上支持什么。当问题涉及
-"是否真的在接管流量"而非"内核是否支持"时，请一并提供此报告。
-
 常用系统信息：
 
 ```sh
@@ -66,18 +55,14 @@ dmesg -T > dmesg-after-reboot.txt
 
 ## 日志与运行状态
 
-启动成功后会在 Debug 级别输出一条简要的 `eBPF inbound started` 摘要：启用的路径、
-每个 attachment 实际挂载的接口与机制、仍在等待接口的路径，以及 `fakeip_icmp`
-实际覆盖的范围。Debug 日志还会输出 `eBPF cgroup active` 或 `eBPF TC active`
-摘要，其中包括选中的
-数据面及实际运行路径。TC 摘要还会按需列出默认接口、
+Debug 日志级别下，启动成功后会输出一条 `eBPF cgroup active` 或 `eBPF TC active`
+摘要，其中包括选中的数据面及实际运行路径。TC 摘要还会按需列出默认接口、
 attachment、内部监听器、路由状态和 delivery 接口，每个 attachment 会标明
 local/shared 角色和帧格式。网络事件仅在 attachment 或受管
 网络状态发生变化时输出 Debug 日志，修复失败会输出限频的 Warn 日志。用户态 handoff
-异常会输出限频后的 Warn 或 Error 日志；BPF 报文返回路径不输出逐包日志。接口生命周期
-主要由事件驱动，并使用低频漂移检查修复没有产生相应通知的内核状态变化。shared
-`packet_rewrite` 会在 flow 事件、释放期限或 map 压力需要时执行有界维护；这些任务
-不会定期输出状态日志。
+异常会输出限频后的 Warn 或 Error 日志；BPF 报文返回路径不输出逐包日志，接口生命周期
+也不使用周期轮询。shared `packet_rewrite` 会执行有界的自适应清理来回收孤立 flow
+状态，但该维护任务不会定期输出状态日志。
 
 如果日志报告 assignment 或 UDP 原目标读取失败，请保留首次错误前后的完整日志，
 并同时采集下文的 TC attachment 信息。

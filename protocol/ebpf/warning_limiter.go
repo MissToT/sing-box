@@ -4,7 +4,6 @@ package ebpf
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -12,11 +11,9 @@ import (
 const warningInterval = 10 * time.Second
 
 type warningLimiter struct {
-	access      sync.Mutex
-	next        time.Time
-	suppressed  uint64
-	lastMessage string
-	lastAt      time.Time
+	access     sync.Mutex
+	next       time.Time
+	suppressed uint64
 }
 
 func (l *warningLimiter) allow(now time.Time) (bool, uint64) {
@@ -40,29 +37,8 @@ type contextErrorLogger interface {
 	ErrorContext(ctx context.Context, args ...any)
 }
 
-// record keeps the most recent occurrence for diagnostics regardless of
-// whether the rate limiter goes on to actually log this one: an operator
-// asking "what's the last error on this path" wants to know it happened
-// seconds ago even if the log line itself was suppressed as a repeat.
-func (l *warningLimiter) record(now time.Time, message ...any) {
-	l.access.Lock()
-	l.lastMessage = fmt.Sprint(message...)
-	l.lastAt = now
-	l.access.Unlock()
-}
-
-// last reports the most recently recorded message and when, for diagnostics.
-// The zero time means nothing has ever been recorded.
-func (l *warningLimiter) last() (string, time.Time) {
-	l.access.Lock()
-	defer l.access.Unlock()
-	return l.lastMessage, l.lastAt
-}
-
 func (l *warningLimiter) warn(logger warningLogger, message ...any) {
-	now := time.Now()
-	l.record(now, message...)
-	allowed, suppressed := l.allow(now)
+	allowed, suppressed := l.allow(time.Now())
 	if !allowed {
 		return
 	}
@@ -73,9 +49,7 @@ func (l *warningLimiter) warn(logger warningLogger, message ...any) {
 }
 
 func (l *warningLimiter) errorContext(logger contextErrorLogger, ctx context.Context, message ...any) {
-	now := time.Now()
-	l.record(now, message...)
-	allowed, suppressed := l.allow(now)
+	allowed, suppressed := l.allow(time.Now())
 	if !allowed {
 		return
 	}
@@ -89,7 +63,6 @@ type udpWarningLimiters struct {
 	packetInfo          warningLimiter
 	originalDestination warningLimiter
 	cleanup             warningLimiter
-	replySocketCapacity warningLimiter
 }
 
 type interfaceWarningLimiters struct {
@@ -99,5 +72,4 @@ type interfaceWarningLimiters struct {
 	infrastructure   warningLimiter
 	hostPolicy       warningLimiter
 	reconcile        warningLimiter
-	fakeIPICMPRoute  warningLimiter
 }

@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing-box/common/interrupt"
 	E "github.com/sagernet/sing/common/exceptions"
 	N "github.com/sagernet/sing/common/network"
 )
@@ -21,11 +20,9 @@ type innerTransport interface {
 var _ adapter.HTTPTransport = (*ManagedTransport)(nil)
 
 type ManagedTransport struct {
-	epoch atomic.Pointer[transportEpoch]
-	// Keep resource downloads out of ordinary request connection pools.
-	downloadEpoch atomic.Pointer[transportEpoch]
+	epoch         atomic.Pointer[transportEpoch]
 	rebuildAccess sync.Mutex
-	factory       func(resourceDownload bool) (innerTransport, error)
+	factory       func() (innerTransport, error)
 	cheapRebuild  bool
 
 	dialer          N.Dialer
@@ -65,38 +62,34 @@ func (b *managedResponseBody) Close() error {
 	return err
 }
 
-func (t *ManagedTransport) getEpoch(slot *atomic.Pointer[transportEpoch], resourceDownload bool) (*transportEpoch, error) {
-	epoch := slot.Load()
+func (t *ManagedTransport) getEpoch() (*transportEpoch, error) {
+	epoch := t.epoch.Load()
 	if epoch != nil {
 		return epoch, nil
 	}
 	t.rebuildAccess.Lock()
 	defer t.rebuildAccess.Unlock()
-	epoch = slot.Load()
+	epoch = t.epoch.Load()
 	if epoch != nil {
 		return epoch, nil
 	}
-	inner, err := t.factory(resourceDownload)
+	inner, err := t.factory()
 	if err != nil {
 		return nil, err
 	}
 	epoch = &transportEpoch{transport: inner}
-	slot.Store(epoch)
+	t.epoch.Store(epoch)
 	return epoch, nil
 }
 
-func (t *ManagedTransport) acquireEpoch(resourceDownload bool) (*transportEpoch, error) {
-	slot := &t.epoch
-	if resourceDownload {
-		slot = &t.downloadEpoch
-	}
+func (t *ManagedTransport) acquireEpoch() (*transportEpoch, error) {
 	for {
-		epoch, err := t.getEpoch(slot, resourceDownload)
+		epoch, err := t.getEpoch()
 		if err != nil {
 			return nil, err
 		}
 		epoch.active.Add(1)
-		if epoch == slot.Load() {
+		if epoch == t.epoch.Load() {
 			return epoch, nil
 		}
 		t.releaseEpoch(epoch)
@@ -120,7 +113,7 @@ func (t *ManagedTransport) retireEpoch(epoch *transportEpoch) {
 }
 
 func (t *ManagedTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	epoch, err := t.acquireEpoch(interrupt.IsResourceDownloadFromContext(request.Context()))
+	epoch, err := t.acquireEpoch()
 	if err != nil {
 		return nil, E.Cause(err, "rebuild http transport")
 	}
@@ -147,28 +140,22 @@ func (t *ManagedTransport) RoundTrip(request *http.Request) (*http.Response, err
 }
 
 func (t *ManagedTransport) CloseIdleConnections() {
-	for _, slot := range []*atomic.Pointer[transportEpoch]{&t.epoch, &t.downloadEpoch} {
-		oldEpoch := slot.Swap(nil)
-		if oldEpoch != nil {
-			oldEpoch.transport.CloseIdleConnections()
-			t.retireEpoch(oldEpoch)
-		}
+	oldEpoch := t.epoch.Swap(nil)
+	if oldEpoch == nil {
+		return
 	}
+	oldEpoch.transport.CloseIdleConnections()
+	t.retireEpoch(oldEpoch)
 }
 
 func (t *ManagedTransport) Reset() {
-	t.resetEpoch(&t.epoch, false)
-	t.resetEpoch(&t.downloadEpoch, true)
-}
-
-func (t *ManagedTransport) resetEpoch(slot *atomic.Pointer[transportEpoch], resourceDownload bool) {
-	oldEpoch := slot.Swap(nil)
-	if t.cheapRebuild && (!resourceDownload || oldEpoch != nil) {
+	oldEpoch := t.epoch.Swap(nil)
+	if t.cheapRebuild {
 		t.rebuildAccess.Lock()
-		if slot.Load() == nil {
-			inner, err := t.factory(resourceDownload)
+		if t.epoch.Load() == nil {
+			inner, err := t.factory()
 			if err == nil {
-				slot.Store(&transportEpoch{transport: inner})
+				t.epoch.Store(&transportEpoch{transport: inner})
 			}
 		}
 		t.rebuildAccess.Unlock()
@@ -177,13 +164,11 @@ func (t *ManagedTransport) resetEpoch(slot *atomic.Pointer[transportEpoch], reso
 }
 
 func (t *ManagedTransport) close() error {
-	var errs []error
-	for _, slot := range []*atomic.Pointer[transportEpoch]{&t.epoch, &t.downloadEpoch} {
-		if epoch := slot.Swap(nil); epoch != nil {
-			errs = append(errs, epoch.transport.Close())
-		}
+	epoch := t.epoch.Swap(nil)
+	if epoch != nil {
+		return epoch.transport.Close()
 	}
-	return E.Errors(errs...)
+	return nil
 }
 
 var _ adapter.HTTPTransport = (*sharedRef)(nil)

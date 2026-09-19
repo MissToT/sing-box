@@ -101,7 +101,6 @@ func NewNetworkManager(ctx context.Context, logger logger.ContextLogger, options
 			NetworkType:         common.Map(options.DefaultNetworkType, option.InterfaceType.Build),
 			FallbackNetworkType: common.Map(options.DefaultFallbackNetworkType, option.InterfaceType.Build),
 			FallbackDelay:       time.Duration(options.DefaultFallbackDelay),
-			ConcurrentDial:      options.ConcurrentDial,
 		},
 		pauseManager:      service.FromContext[pause.Manager](ctx),
 		platformInterface: service.FromContext[adapter.PlatformInterface](ctx),
@@ -510,16 +509,6 @@ func (r *NetworkManager) ResetNetwork(ctx context.Context) {
 	}
 
 	r.router.ResetNetwork()
-}
-
-func (r *NetworkManager) ReleaseMemory(ctx context.Context) {
-	r.ResetNetwork(ctx)
-	for _, outbound := range r.outbound.Outbounds() {
-		keeper, isKeeper := outbound.(adapter.IdleConnectionKeeper)
-		if isKeeper {
-			keeper.CloseIdleConnections()
-		}
-	}
 }
 
 func (r *NetworkManager) notifyInterfaceUpdate(defaultInterface *control.Interface, flags int) {
