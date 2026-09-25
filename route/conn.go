@@ -33,14 +33,16 @@ import (
 var _ adapter.ConnectionManager = (*ConnectionManager)(nil)
 
 type ConnectionManager struct {
-	logger      logger.ContextLogger
-	access      sync.Mutex
-	connections list.List[io.Closer]
+	logger               logger.ContextLogger
+	access               sync.Mutex
+	connections          list.List[io.Closer]
+	halfCloseIdleTimeout time.Duration
 }
 
 func NewConnectionManager(logger logger.ContextLogger) *ConnectionManager {
 	return &ConnectionManager{
-		logger: logger,
+		logger:               logger,
+		halfCloseIdleTimeout: C.TCPHalfCloseIdleTimeout,
 	}
 }
 
@@ -170,15 +172,15 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
 		remoteConn = spoofConn
 	}
 	serverFirst := sniff.Skip(&metadata)
-	var done atomic.Bool
-	if m.kickWriteHandshake(ctx, conn, remoteConn, serverFirst, false, &done, onClose) {
+	state := newConnectionCopyState()
+	if m.kickWriteHandshake(ctx, conn, remoteConn, serverFirst, false, state, onClose) {
 		return
 	}
-	if m.kickWriteHandshake(ctx, remoteConn, conn, serverFirst, true, &done, onClose) {
+	if m.kickWriteHandshake(ctx, remoteConn, conn, serverFirst, true, state, onClose) {
 		return
 	}
-	go m.connectionCopy(ctx, conn, remoteConn, false, &done, onClose)
-	go m.connectionCopy(ctx, remoteConn, conn, true, &done, onClose)
+	go m.connectionCopy(ctx, conn, remoteConn, false, state, onClose)
+	go m.connectionCopy(ctx, remoteConn, conn, true, state, onClose)
 }
 
 func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dialer, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
@@ -303,27 +305,91 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 	go m.packetConnectionCopy(ctx, destination, conn, true, &done, onClose)
 }
 
-func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn, destination net.Conn, direction bool, done *atomic.Bool, onClose N.CloseHandlerFunc) {
+const (
+	directionUpload   = 0
+	directionDownload = 1
+)
+
+// connectionCopyState tracks the lifecycle shared by the two copy directions of a
+// connection.
+type connectionCopyState struct {
+	done     atomic.Bool
+	finished chan struct{}
+	activity [2]atomic.Int64
+}
+
+func newConnectionCopyState() *connectionCopyState {
+	return &connectionCopyState{
+		finished: make(chan struct{}),
+	}
+}
+
+func (s *connectionCopyState) markActivity(direction int) {
+	s.activity[direction].Store(time.Now().UnixNano())
+}
+
+func (s *connectionCopyState) lastActivity(direction int) time.Time {
+	return time.Unix(0, s.activity[direction].Load())
+}
+
+// activityReader reports read progress through the counter interface, which the copy
+// loop unwraps before copying, so the splice and read waiter fast paths stay untouched.
+type activityReader struct {
+	net.Conn
+	state     *connectionCopyState
+	direction int
+}
+
+func (r *activityReader) UnwrapReader() (io.Reader, []N.CountFunc) {
+	state := r.state
+	direction := r.direction
+	return r.Conn, []N.CountFunc{func(int64) {
+		state.markActivity(direction)
+	}}
+}
+
+func (r *activityReader) ReaderReplaceable() bool {
+	return true
+}
+
+func (r *activityReader) Upstream() any {
+	return r.Conn
+}
+
+func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn, destination net.Conn, direction bool, state *connectionCopyState, onClose N.CloseHandlerFunc) {
+	selfDirection, peerDirection := directionUpload, directionDownload
+	if direction {
+		selfDirection, peerDirection = directionDownload, directionUpload
+	}
+	originSource := source
+	source = &activityReader{
+		Conn:      source,
+		state:     state,
+		direction: selfDirection,
+	}
 	_, err := bufio.CopyWithIncreateBuffer(destination, source, bufio.DefaultIncreaseBufferAfter, bufio.DefaultBatchSize)
 	if err != nil {
-		common.Close(source, destination)
+		common.Close(originSource, destination)
 	} else {
 		destinationWriter, _ := N.UnwrapCountWriter(destination, nil)
 		duplexDst, isDuplex := N.UnwrapWriter(destinationWriter).(N.WriteCloser)
 		if isDuplex {
 			err = duplexDst.CloseWrite()
 			if err != nil {
-				common.Close(source, destination)
+				common.Close(originSource, destination)
+			} else {
+				m.watchHalfClosedConnection(ctx, originSource, destination, state, peerDirection)
 			}
 		} else {
 			destination.Close()
 		}
 	}
-	if done.Swap(true) {
+	if state.done.Swap(true) {
+		close(state.finished)
 		if onClose != nil {
 			onClose(err)
 		}
-		common.Close(source, destination)
+		common.Close(originSource, destination)
 	}
 	if !direction {
 		if err == nil {
@@ -344,7 +410,44 @@ func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn,
 	}
 }
 
-func (m *ConnectionManager) kickWriteHandshake(ctx context.Context, source net.Conn, destination net.Conn, serverFirst bool, direction bool, done *atomic.Bool, onClose N.CloseHandlerFunc) bool {
+// watchHalfClosedConnection closes a connection that stays idle after one direction was
+// half-closed. Without it the peer decides when the connection ends: the TUN stack only
+// reaps an orphaned half-closed flow after the user side has been closed, and a keepalive
+// probe cannot detect an idle peer that still answers, so such a flow would be kept
+// indefinitely.
+func (m *ConnectionManager) watchHalfClosedConnection(ctx context.Context, source net.Conn, destination net.Conn, state *connectionCopyState, peerDirection int) {
+	timeout := m.halfCloseIdleTimeout
+	if timeout <= 0 {
+		return
+	}
+	armedAt := time.Now()
+	go func() {
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		for {
+			select {
+			case <-state.finished:
+				return
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+				lastActivity := state.lastActivity(peerDirection)
+				if lastActivity.Before(armedAt) {
+					lastActivity = armedAt
+				}
+				if time.Since(lastActivity) < timeout {
+					timer.Reset(timeout)
+					continue
+				}
+				m.logger.DebugContext(ctx, "connection half-close idle timeout, closing")
+				common.Close(source, destination)
+				return
+			}
+		}
+	}()
+}
+
+func (m *ConnectionManager) kickWriteHandshake(ctx context.Context, source net.Conn, destination net.Conn, serverFirst bool, direction bool, state *connectionCopyState, onClose N.CloseHandlerFunc) bool {
 	if !N.NeedHandshakeForWrite(destination) {
 		return false
 	}
@@ -388,7 +491,7 @@ func (m *ConnectionManager) kickWriteHandshake(ctx context.Context, source net.C
 	if !wrotePayload && (E.IsMulti(err, os.ErrInvalid, context.DeadlineExceeded, io.EOF) || E.IsTimeout(err)) {
 		return false
 	}
-	if !done.Swap(true) {
+	if !state.done.Swap(true) {
 		if onClose != nil {
 			onClose(err)
 		}
