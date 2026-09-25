@@ -4,6 +4,7 @@ import (
 	"io"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
@@ -16,6 +17,11 @@ type abstractRule struct {
 	disabled atomic.Bool
 	uuid     string
 	history  *urltest.HistoryStorage
+
+	hitCount  atomic.Uint64
+	hitAt     atomic.Int64
+	missCount atomic.Uint64
+	missAt    atomic.Int64
 }
 
 func (r *abstractRule) Disabled() bool {
@@ -37,6 +43,51 @@ func (r *abstractRule) ChangeStatus() {
 		}
 	}
 }
+
+// HitCount implements [adapter.RuleStatistics].
+func (r *abstractRule) HitCount() uint64 {
+	return r.hitCount.Load()
+}
+
+// HitAt implements [adapter.RuleStatistics].
+func (r *abstractRule) HitAt() time.Time {
+	return time.Unix(0, r.hitAt.Load())
+}
+
+// MissCount implements [adapter.RuleStatistics].
+func (r *abstractRule) MissCount() uint64 {
+	return r.missCount.Load()
+}
+
+// MissAt implements [adapter.RuleStatistics].
+func (r *abstractRule) MissAt() time.Time {
+	return time.Unix(0, r.missAt.Load())
+}
+
+// RecordMatch implements [adapter.RuleStatistics].
+func (r *abstractRule) RecordMatch(matched bool) {
+	now := time.Now().UnixNano()
+	if matched {
+		r.hitCount.Add(1)
+		r.hitAt.Store(now)
+	} else {
+		r.missCount.Add(1)
+		r.missAt.Store(now)
+	}
+}
+
+// ResetStatistics implements [adapter.RuleStatistics].
+func (r *abstractRule) ResetStatistics() {
+	r.hitCount.Store(0)
+	r.hitAt.Store(0)
+	r.missCount.Store(0)
+	r.missAt.Store(0)
+}
+
+var (
+	_ adapter.RuleStatistics = (*abstractDefaultRule)(nil)
+	_ adapter.RuleStatistics = (*abstractLogicalRule)(nil)
+)
 
 type abstractDefaultRule struct {
 	abstractRule
