@@ -64,3 +64,48 @@ func TestOverrideAnyTLSOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestOverrideDialerOptionDetour(t *testing.T) {
+	// In-subscription detours must be rewritten to the provider-prefixed final
+	// tag of the referenced node, which uses the "[tag] " format.
+	testCases := []struct {
+		name        string
+		detour      string
+		tags        []string
+		providerTag string
+		expected    string
+	}{
+		{
+			name:        "prefix in-subscription detour",
+			detour:      "node1",
+			tags:        []string{"node1", "node2"},
+			providerTag: "myprov",
+			expected:    "[myprov] node1",
+		},
+		{
+			name:     "keep in-subscription detour without provider tag",
+			detour:   "node1",
+			tags:     []string{"node1", "node2"},
+			expected: "node1",
+		},
+		{
+			name:        "drop detour referencing unknown tag",
+			detour:      "elsewhere",
+			tags:        []string{"node1", "node2"},
+			providerTag: "myprov",
+			expected:    "",
+		},
+		{
+			name:        "keep empty detour",
+			tags:        []string{"node1"},
+			providerTag: "myprov",
+			expected:    "",
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			options := overrideDialerOption(option.DialerOptions{Detour: testCase.detour}, nil, testCase.tags, testCase.providerTag)
+			require.Equal(t, testCase.expected, options.Detour)
+		})
+	}
+}
