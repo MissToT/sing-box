@@ -13,6 +13,20 @@
 
 !!! question "Since sing-box 1.8.0"
 
+### Rule count
+
+The Clash API `ruleCount` counts entries in `domain`, `domain_suffix`, `domain_keyword`,
+`domain_regex`, AdGuard domain rules, `source_ip_cidr`, and `ip_cidr`. Each entry counts as one;
+CIDRs are not expanded into individual IP addresses. Additional conditions such as ports
+do not reduce this count. Logical rules recursively sum their child counts, and the
+rule-set sums its top-level rule counts. Rules without domain or IP entries retain their
+existing condition-group count.
+
+Source lists are counted as supplied, including duplicates. Binary and memory-mapped
+rule-sets count the retained domain entries and normalized CIDR prefixes. Compilation
+can remove duplicates and merge IP networks, so these counts can be lower than the
+original source count. Entries in separate rules are counted separately.
+
 ### Structure
 
 === "Inline"
@@ -102,6 +116,8 @@ List of [Headless Rule](./headless-rule/).
 Format of rule-set file, `source` or `binary`.
 
 Optional when `path` or `url` uses `json` or `srs` as extension.
+
+For remote rule-sets, the URL extension takes precedence over the path extension. An explicit `format` overrides both.
 
 #### path
 
