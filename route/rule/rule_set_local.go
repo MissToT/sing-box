@@ -130,6 +130,7 @@ func (s *LocalRuleSet) Update(ctx context.Context) error {
 }
 
 func (s *LocalRuleSet) Close() error {
-	s.rules = nil
-	return common.Close(common.PtrOrNil(s.watcher))
+	err := common.Close(common.PtrOrNil(s.watcher))
+	s.closeRules()
+	return err
 }
