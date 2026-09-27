@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -28,6 +29,7 @@ import (
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/common/uot"
+	"github.com/sagernet/sing/service"
 )
 
 var defaultPacketSniffers = []sniff.PacketSniffer{
@@ -397,7 +399,103 @@ func (r *Router) wrapQUICSniffIdleCache(metadata adapter.InboundContext, onClose
 	}
 }
 
-func (r *Router) PreMatch(metadata adapter.InboundContext, firstPacket []byte) adapter.PreMatchResult {
+// ruleEvaluation is a single rule evaluation performed by the router, buffered
+// until the routing decision is known.
+type ruleEvaluation struct {
+	rule    adapter.Rule
+	matched bool
+}
+
+// ruleEvaluationPool reuses evaluation buffers, so the pre-match pass does not
+// allocate for every flow.
+var ruleEvaluationPool = sync.Pool{
+	New: func() any {
+		return new([]ruleEvaluation)
+	},
+}
+
+func acquireRuleEvaluations() *[]ruleEvaluation {
+	evaluations := ruleEvaluationPool.Get().(*[]ruleEvaluation)
+	*evaluations = (*evaluations)[:0]
+	return evaluations
+}
+
+func releaseRuleEvaluations(evaluations *[]ruleEvaluation) {
+	clear(*evaluations)
+	*evaluations = (*evaluations)[:0]
+	ruleEvaluationPool.Put(evaluations)
+}
+
+func recordRuleEvaluations(evaluations []ruleEvaluation) {
+	for _, evaluation := range evaluations {
+		adapter.RecordRuleMatch(evaluation.rule, evaluation.matched)
+	}
+}
+
+// copyRuleEvaluations copies buffered evaluations out of the pooled buffer:
+// the tracker callback may run after PreMatch returned and the buffer was reused.
+func copyRuleEvaluations(evaluations []ruleEvaluation) []ruleEvaluation {
+	if len(evaluations) == 0 {
+		return nil
+	}
+	copied := make([]ruleEvaluation, len(evaluations))
+	copy(copied, evaluations)
+	return copied
+}
+
+// withRuleStatistics records the buffered evaluations when sing-tun confirms the offload.
+// It is only used for verdicts that carry a NewTracker, which sing-tun calls right before
+// returning from a successful createFlow.
+func withRuleStatistics(newTracker func() tun.FlowTracker, evaluations []ruleEvaluation) func() tun.FlowTracker {
+	return func() tun.FlowTracker {
+		recordRuleEvaluations(evaluations)
+		return newTracker()
+	}
+}
+
+// preMatchVerdictIsFinal reports whether the verdict produced by the pre-match pass is the
+// final routing decision, and therefore whether its rule evaluations have to be recorded
+// here. Every routing decision is counted exactly once: a verdict that is not final is
+// counted by matchRule instead, which performs its own rule walk.
+func (r *Router) preMatchVerdictIsFinal(result adapter.PreMatchResult) bool {
+	switch result.Action {
+	case adapter.PreMatchContinue:
+		// The connection continues to the normal stack and matchRule counts it.
+		return false
+	case adapter.PreMatchFlow:
+		// sing-tun may fail to offload the flow and fall back to accepting the packet
+		// (the ActionFlow case in its flow_dispatch.go). NewTracker fires only on a
+		// successful offload, so the verdict is final exactly when one is attached.
+		return result.NewTracker != nil
+	case adapter.PreMatchBypass:
+		// Bypass is honoured only through sing-tun's nfqueue path, which is active exactly
+		// when an auto-redirect session registered its output mark, and which never calls
+		// NewTracker. Everywhere else the packet is routed normally and matchRule counts
+		// the skipped rule as a miss.
+		return result.NewTracker != nil || r.autoRedirectEnabled()
+	default:
+		// reject, drop and hijack-dns always terminate the flow.
+		return true
+	}
+}
+
+// isSkippedBypass reports whether matchRule skips this rule instead of letting it decide
+// the route: a bypass action without an outbound. Such a rule matched but did not take
+// effect, so it is counted as a miss rather than as a hit, and it is not dropped from the
+// statistics either.
+func isSkippedBypass(rule adapter.Rule) bool {
+	bypassAction, isBypass := rule.Action().(*R.RuleActionBypass)
+	return isBypass && bypassAction.Outbound == ""
+}
+
+// autoRedirectEnabled reports whether an auto-redirect session is active, which is the only
+// configuration where sing-tun honours a bypass verdict (through its nfqueue path).
+func (r *Router) autoRedirectEnabled() bool {
+	networkManager := service.FromContext[adapter.NetworkManager](r.ctx)
+	return networkManager != nil && networkManager.AutoRedirectOutputMark() != 0
+}
+
+func (r *Router) PreMatch(metadata adapter.InboundContext, firstPacket []byte) (result adapter.PreMatchResult) {
 	ctx := log.ContextWithNewID(r.ctx)
 	metadata.PreMatch = true
 	continueResult := adapter.PreMatchResult{Action: adapter.PreMatchContinue}
@@ -406,12 +504,31 @@ func (r *Router) PreMatch(metadata adapter.InboundContext, firstPacket []byte) a
 	if err != nil {
 		return continueResult
 	}
+	// Rule evaluations are buffered until the routing decision is known, and recorded only
+	// when this pass produced the final verdict (see preMatchVerdictIsFinal). Otherwise the
+	// connection continues to the normal stack, where matchRule performs its own rule walk
+	// and counts the decision there.
+	evaluations := acquireRuleEvaluations()
+	defer func() {
+		if r.preMatchVerdictIsFinal(result) {
+			if result.NewTracker != nil {
+				// The flow may still fail to offload: sing-tun calls NewTracker only when it
+				// succeeds, and matchRule counts the fallback, so hook the statistics there.
+				result.NewTracker = withRuleStatistics(result.NewTracker, copyRuleEvaluations(*evaluations))
+			} else {
+				recordRuleEvaluations(*evaluations)
+			}
+		}
+		releaseRuleEvaluations(evaluations)
+	}()
 	for currentRuleIndex, currentRule := range r.rules {
 		if currentRule.Disabled() {
 			continue
 		}
 		metadata.ResetRuleCache()
-		if !currentRule.Match(&metadata) {
+		matched := currentRule.Match(&metadata)
+		*evaluations = append(*evaluations, ruleEvaluation{rule: currentRule, matched: matched})
+		if !matched {
 			continue
 		}
 		ruleDescription := currentRule.String()
@@ -749,7 +866,12 @@ match:
 			continue
 		}
 		metadata.ResetRuleCache()
-		if !currentRule.Match(metadata) {
+		matched := currentRule.Match(metadata)
+		// A rule that matchRule skips does not decide the route, so it is counted as a miss
+		// instead of a hit. It is still counted: dropping it entirely would leave both
+		// counters at zero for such a rule.
+		adapter.RecordRuleMatch(currentRule, matched && !isSkippedBypass(currentRule))
+		if !matched {
 			continue
 		}
 		ruleDescription := currentRule.String()
