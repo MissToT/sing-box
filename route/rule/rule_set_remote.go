@@ -3,11 +3,13 @@ package rule
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -337,7 +339,30 @@ func (s *RemoteRuleSet) saveCacheFile(content []byte) error {
 	if err != nil {
 		return err
 	}
-	err = filemanager.WriteFile(s.ctx, s.path, content, 0o666)
+	mode := os.FileMode(0o666)
+	if info, statErr := filemanager.Stat(s.ctx, s.path); statErr == nil {
+		mode = info.Mode().Perm()
+	} else if !errors.Is(statErr, fs.ErrNotExist) {
+		return statErr
+	}
+	tempPath := filepath.Join(dir, ".rule-set-"+rand.Text()+".tmp")
+	file, err := filemanager.OpenFile(s.ctx, tempPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	defer filemanager.Remove(s.ctx, tempPath)
+	_, err = file.Write(content)
+	if err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	err = filemanager.Rename(s.ctx, tempPath, s.path)
 	if err != nil {
 		return err
 	}
@@ -346,7 +371,7 @@ func (s *RemoteRuleSet) saveCacheFile(content []byte) error {
 }
 
 func (s *RemoteRuleSet) Close() error {
-	s.rules = nil
 	s.cancel()
+	s.closeRules()
 	return nil
 }
