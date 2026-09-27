@@ -314,7 +314,9 @@ func (r *Router) matchDNS(ctx context.Context, rules []adapter.DNSRule, allowFak
 		}
 		metadata.ResetRuleCache()
 		metadata.DestinationAddressMatchFromResponse = false
-		if currentRule.LegacyPreMatch(metadata) {
+		matched := currentRule.LegacyPreMatch(metadata)
+		adapter.RecordRuleMatch(currentRule, matched)
+		if matched {
 			if ruleDescription := currentRule.String(); ruleDescription != "" {
 				r.logger.DebugContext(ctx, "match[", currentRuleIndex, "] ", currentRule, " => ", currentRule.Action())
 			} else {
@@ -473,6 +475,34 @@ func (s *dnsRuleWalkState) anonymousResponse() *mDNS.Msg {
 	return s.anonymousFuture.view()
 }
 
+// dnsResponseUsable reports whether any response this rule matches against exists or is
+// still being evaluated. A rule whose responses are all missing — because the evaluate
+// rule it depends on did not run for this query — can never match, and evaluating it would
+// only count a miss for a rule that was never really evaluated.
+//
+// The check is deliberately permissive: a logical rule in "or" mode may reference several
+// responses and still match when only one of them is present, so a rule is skipped only
+// when none of them is usable.
+func dnsResponseUsable(rule adapter.DNSRule, state *dnsRuleWalkState) bool {
+	for _, responseTag := range rule.MatchResponseTags() {
+		if state.namedResponses[responseTag] != nil {
+			return true
+		}
+		if future := state.namedFutures[responseTag]; future != nil && !future.resolved() {
+			return true
+		}
+	}
+	if rule.MatchResponseAnonymous() {
+		if state.anonymousResponse() != nil {
+			return true
+		}
+		if future := state.anonymousFuture; future != nil && !future.resolved() {
+			return true
+		}
+	}
+	return false
+}
+
 type dnsEvaluatedFuture struct {
 	tag       string
 	terminal  bool
@@ -616,6 +646,13 @@ func (r *Router) walkDNSRules(ctx context.Context, rules []adapter.DNSRule, mess
 		hasBindings := len(currentRule.MatchResponseTags()) > 0 || currentRule.MatchResponseAnonymous()
 		if hasBindings {
 			r.settleDNSFutures(ctx, message, state)
+			if !dnsResponseUsable(currentRule, state) {
+				// The evaluate rule this one depends on did not run for this query, so none
+				// of its responses is present. Skipping it keeps it out of the statistics,
+				// instead of evaluating it against nothing and counting a miss for a rule
+				// that was never really evaluated.
+				continue
+			}
 			if currentRule.Race() {
 				var (
 					pendingFutures  []*dnsEvaluatedFuture
@@ -678,7 +715,9 @@ func (r *Router) walkDNSRules(ctx context.Context, rules []adapter.DNSRule, mess
 		metadata.DNSResponse = state.anonymousResponse()
 		metadata.NamedDNSResponses = state.namedResponses
 		metadata.DestinationAddressMatchFromResponse = false
-		if !currentRule.Match(metadata) {
+		matched := currentRule.Match(metadata)
+		adapter.RecordRuleMatch(currentRule, matched)
+		if !matched {
 			continue
 		}
 		if state.lastLoggedIndex != state.ruleIndex {
@@ -871,7 +910,9 @@ func (r *Router) sweepArmedDNSRules(ctx context.Context, message *mDNS.Msg, stat
 		}
 		metadata.NamedDNSResponses = state.namedResponses
 		metadata.DestinationAddressMatchFromResponse = false
-		if !armed.rule.Match(metadata) {
+		matched := armed.rule.Match(metadata)
+		adapter.RecordRuleMatch(armed.rule, matched)
+		if !matched {
 			continue
 		}
 		r.logRuleMatch(ctx, armed.ruleIndex, armed.rule)
