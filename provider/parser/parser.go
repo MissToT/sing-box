@@ -145,7 +145,7 @@ func overrideDialerOption(options option.DialerOptions, overrideDialerOptions *o
 			return options.Detour == tag
 		}) {
 			if providerTag != "" {
-				options.Detour = providerTag + "/" + options.Detour
+				options.Detour = "[" + providerTag + "] " + options.Detour
 			}
 		} else {
 			options.Detour = ""

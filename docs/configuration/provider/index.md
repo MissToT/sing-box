@@ -81,7 +81,7 @@ Type of the provider. `local` or `remote`.
 
 Tag of the provider.
 
-The node `node_name` from `provider` will be tagged as `provider/node_name`.
+The node `node_name` from `provider` will be tagged as `[provider] node_name`.
 
 ### Local or Remote Fields
 

@@ -81,7 +81,7 @@
 
 订阅源的标签。
 
-来自 `provider` 的节点 `node_name`，导入后的标签为 `provider/node_name`。
+来自 `provider` 的节点 `node_name`，导入后的标签为 `[provider] node_name`。
 
 ### 本地或远程字段
 
