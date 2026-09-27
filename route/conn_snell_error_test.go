@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	snell "github.com/sagernet/sing-snell"
@@ -47,11 +46,11 @@ func TestConnectionCopySnellErrorLevel(t *testing.T) {
 				manager := NewConnectionManager(log)
 				source := &snellErrorTestConn{readErr: testCase.err}
 				destination := &snellErrorTestConn{}
-				var done atomic.Bool
-				done.Store(true)
+				state := newConnectionCopyState()
+				state.done.Store(true)
 				called := false
 				var closeErr error
-				manager.connectionCopy(context.Background(), source, destination, direction == "download", &done, func(err error) {
+				manager.connectionCopy(context.Background(), source, destination, direction == "download", state, func(err error) {
 					called = true
 					closeErr = err
 				})
