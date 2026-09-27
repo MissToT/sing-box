@@ -3,6 +3,7 @@ package rule
 import (
 	"bytes"
 	"context"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,6 +37,7 @@ type abstractRuleSet struct {
 	lastUpdated time.Time
 	callbacks   list.List[adapter.RuleSetUpdateCallback]
 	refs        atomic.Int32
+	closed      bool
 }
 
 func (s *abstractRuleSet) Name() string {
@@ -69,7 +71,14 @@ func (s *abstractRuleSet) setUpdatedTime(updatedAt time.Time) {
 }
 
 func (s *abstractRuleSet) String() string {
-	return strings.Join(F.MapToString(s.rules), " ")
+	return strings.Join(F.MapToString(s.rulesSnapshot()), " ")
+}
+
+func (s *abstractRuleSet) rulesSnapshot() []adapter.HeadlessRule {
+	s.access.RLock()
+	defer s.access.RUnlock()
+	// Published rules and their backing slice are immutable.
+	return s.rules
 }
 
 func (s *abstractRuleSet) Metadata() adapter.RuleSetMetadata {
@@ -95,9 +104,18 @@ func (s *abstractRuleSet) DecRef() {
 }
 
 func (s *abstractRuleSet) Cleanup() {
+	s.access.Lock()
+	defer s.access.Unlock()
 	if s.refs.Load() == 0 {
 		s.rules = nil
 	}
+}
+
+func (s *abstractRuleSet) closeRules() {
+	s.access.Lock()
+	defer s.access.Unlock()
+	s.closed = true
+	s.rules = nil
 }
 
 func (s *abstractRuleSet) RegisterCallback(callback adapter.RuleSetUpdateCallback) *list.Element[adapter.RuleSetUpdateCallback] {
@@ -156,6 +174,10 @@ func (s *abstractRuleSet) reloadRules(headlessRules []option.HeadlessRule, ruleS
 		return err
 	}
 	s.access.Lock()
+	if s.closed {
+		s.access.Unlock()
+		return os.ErrClosed
+	}
 	s.rules = rules
 	s.ruleCount = ruleCount
 	s.metadata = metadata
@@ -168,9 +190,9 @@ func (s *abstractRuleSet) reloadRules(headlessRules []option.HeadlessRule, ruleS
 }
 
 func (s *abstractRuleSet) Match(metadata *adapter.InboundContext) bool {
-	return matchAnyHeadlessRule(s.rules, metadata)
+	return matchAnyHeadlessRule(s.rulesSnapshot(), metadata)
 }
 
 func (s *abstractRuleSet) mergeableRule() *DefaultHeadlessRule {
-	return mergeableRuleIn(s.rules)
+	return mergeableRuleIn(s.rulesSnapshot())
 }
