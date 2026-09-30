@@ -276,6 +276,7 @@ func (s *ProviderRemote) fetch(ctx context.Context, isStart bool) error {
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 	infoStr := resp.Header.Get("subscription-userinfo")
 	info, hasInfo := parseInfo(infoStr)
 	switch resp.StatusCode {
@@ -319,7 +320,6 @@ func (s *ProviderRemote) fetch(ctx context.Context, isStart bool) error {
 	default:
 		return E.New("unexpected status: ", resp.Status)
 	}
-	defer resp.Body.Close()
 	contentRaw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
