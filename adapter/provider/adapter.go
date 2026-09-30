@@ -173,7 +173,11 @@ func (a *Adapter) UpdateGroups() {
 	}
 	a.callbackAccess.Unlock()
 	for _, callback := range callbacks {
-		callback(a.providerTag)
+		// A group that fails to rebuild keeps its previous outbounds, so surface the
+		// failure instead of leaving a silently stale group behind.
+		if err := callback(a.providerTag); err != nil {
+			a.logger.Warn(err, " while updating groups for provider ", a.providerTag)
+		}
 	}
 }
 
