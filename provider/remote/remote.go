@@ -3,12 +3,14 @@ package remote
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -283,6 +285,17 @@ func (s *ProviderRemote) fetch(ctx context.Context, isStart bool) error {
 		s.subscriptionInfo = info
 		s.lastUpdated = time.Now()
 		s.infoMu.Unlock()
+		// Write the file before the database: saveCacheFile recomputes the hash of
+		// what it wrote, and that hash is what the database entry has to carry.
+		if s.path != "" {
+			content, _ := json.Marshal(option.Options{
+				Outbounds: s.lastOutOpts,
+				Endpoints: s.lastEPOpts,
+			})
+			if err := s.saveCacheFile(hasInfo, info, content); err != nil {
+				return E.Cause(err, "save outbound provider cache file")
+			}
+		}
 		if s.cacheFile != nil {
 			saveSub := s.cacheFile.LoadSubscription(s.Tag())
 			if saveSub != nil {
@@ -299,15 +312,6 @@ func (s *ProviderRemote) fetch(ctx context.Context, isStart bool) error {
 				if err := s.cacheFile.SaveSubscription(s.Tag(), saveSub); err != nil {
 					s.logger.Error("save outbound provider cache file: ", err)
 				}
-			}
-		}
-		if s.path != "" {
-			content, _ := json.Marshal(option.Options{
-				Outbounds: s.lastOutOpts,
-				Endpoints: s.lastEPOpts,
-			})
-			if err := s.saveCacheFile(hasInfo, info, content); err != nil {
-				return E.Cause(err, "save outbound provider cache file")
 			}
 		}
 		s.logger.Info("update outbound provider ", s.Tag(), ": not modified")
@@ -375,10 +379,13 @@ func (s *ProviderRemote) fetch(ctx context.Context, isStart bool) error {
 }
 
 func (s *ProviderRemote) loadCacheFile() (bool, error) {
-	var content []byte
-	var lastUpdated time.Time
-	var lastEtag string
-	var saveSub *adapter.SavedBinary
+	var (
+		content     []byte
+		lastUpdated time.Time
+		lastEtag    string
+		saveSub     *adapter.SavedBinary
+		repair      *adapter.SavedBinary
+	)
 	if s.cacheFile != nil {
 		if saveSub = s.cacheFile.LoadSubscription(s.Tag()); saveSub != nil {
 			if len(saveSub.URLHash) > 0 && !bytes.Equal(saveSub.URLHash, s.urlHash[:]) {
@@ -414,8 +421,20 @@ func (s *ProviderRemote) loadCacheFile() (bool, error) {
 			return false, closeErr
 		}
 		if saveSub != nil {
-			if !s.hash.Equal(hash.MakeHash(content)) {
-				return false, E.New("load outbound provider cache file failed: validation failed")
+			// The file is authoritative and the database only records which revision
+			// it last saw, so a mismatch means the two drifted apart rather than that
+			// the file is unusable. Keep it and repair the database below instead of
+			// discarding a perfectly readable subscription.
+			fileHash := hash.MakeHash(content)
+			if !s.hash.IsValid() || !s.hash.Equal(fileHash) {
+				s.logger.Warn("outbound provider cache file does not match the cache database, using the cache file")
+				s.hash = fileHash
+				repair = &adapter.SavedBinary{
+					Hash:        fileHash,
+					LastUpdated: saveSub.LastUpdated,
+					LastEtag:    saveSub.LastEtag,
+					URLHash:     s.urlHash[:],
+				}
 			}
 			lastUpdated = saveSub.LastUpdated
 			lastEtag = saveSub.LastEtag
@@ -431,6 +450,11 @@ func (s *ProviderRemote) loadCacheFile() (bool, error) {
 	}
 	if err := s.loadFromContent(content); err != nil {
 		return false, err
+	}
+	if repair != nil && s.cacheFile != nil {
+		if err := s.cacheFile.SaveSubscription(s.Tag(), repair); err != nil {
+			s.logger.Error("repair outbound provider cache: ", err)
+		}
 	}
 	s.UpdateGroups()
 	s.lastUpdated, s.lastEtag = lastUpdated, lastEtag
@@ -534,7 +558,32 @@ func (s *ProviderRemote) saveCacheFile(hasInfo bool, info adapter.SubscriptionIn
 	if err != nil {
 		return err
 	}
-	err = filemanager.WriteFile(s.ctx, s.path, content, 0o666)
+	mode := os.FileMode(0o666)
+	if fileInfo, statErr := filemanager.Stat(s.ctx, s.path); statErr == nil {
+		mode = fileInfo.Mode().Perm()
+	} else if !errors.Is(statErr, fs.ErrNotExist) {
+		return statErr
+	}
+	// Replace the file through a temporary name so an interrupted write cannot
+	// leave a truncated cache behind.
+	tempPath := filepath.Join(dir, ".provider-"+rand.Text()+".tmp")
+	file, err := filemanager.OpenFile(s.ctx, tempPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	defer filemanager.Remove(s.ctx, tempPath)
+	_, err = file.Write(content)
+	if err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	err = filemanager.Rename(s.ctx, tempPath, s.path)
 	if err != nil {
 		return err
 	}
