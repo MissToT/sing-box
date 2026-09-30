@@ -119,7 +119,9 @@ func (c *ClashProxy) BuildEndpoint() option.Endpoint {
 }
 
 func ParseClashSubscription(_ context.Context, content string) ([]option.Outbound, []option.Endpoint, error) {
-	config := &ClashConfig{}
+	// Declared as a value, not a pointer: a null document makes yaml.Unmarshal
+	// nil out a pointer target, and the field accesses below would fault.
+	var config ClashConfig
 	err := yaml.Unmarshal([]byte(content), &config)
 	if err != nil {
 		return nil, nil, E.Cause(err, "parse clash config")
