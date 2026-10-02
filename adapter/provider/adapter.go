@@ -50,6 +50,11 @@ type Adapter struct {
 }
 
 func NewAdapter(ctx context.Context, router adapter.Router, outbound adapter.OutboundManager, endpoint adapter.EndpointManager, logFactory log.Factory, logger log.ContextLogger, providerTag string, providerType string, options option.ProviderHealthCheckOptions) Adapter {
+	// An absent health_check leaves Enabled nil, which means enabled.
+	enabled := true
+	if options.Enabled != nil {
+		enabled = *options.Enabled
+	}
 	timeout := time.Duration(options.Timeout)
 	if timeout == 0 {
 		timeout = 3 * time.Second
@@ -77,7 +82,7 @@ func NewAdapter(ctx context.Context, router adapter.Router, outbound adapter.Out
 		providerType:     providerType,
 		providerTag:      providerTag,
 
-		enabled:  options.Enabled,
+		enabled:  enabled,
 		link:     options.URL,
 		timeout:  timeout,
 		interval: interval,

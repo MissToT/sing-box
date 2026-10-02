@@ -87,11 +87,17 @@ The node `node_name` from `provider` will be tagged as `[provider] node_name`.
 
 #### health_check
 
-Health check configuration.
+Health check configuration. Enabled by default; set to `false` to disable it.
+
+The field also accepts a boolean shorthand:
+
+```json
+"health_check": true
+```
 
 ##### health_check.enabled
 
-Health check enabled.
+Health check enabled. The default value is `true`.
 
 ##### health_check.url
 
