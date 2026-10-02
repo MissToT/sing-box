@@ -17692,7 +17692,29 @@
               }
             },
             "health_check": {
-              "$ref": "#/$defs/ProviderHealthCheckOptions"
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "interval": {
+                      "$ref": "#/$defs/Duration"
+                    },
+                    "timeout": {
+                      "$ref": "#/$defs/Duration"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
             }
           },
           "required": [
@@ -17713,7 +17735,29 @@
               "type": "string"
             },
             "health_check": {
-              "$ref": "#/$defs/ProviderHealthCheckOptions"
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "interval": {
+                      "$ref": "#/$defs/Duration"
+                    },
+                    "timeout": {
+                      "$ref": "#/$defs/Duration"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
             },
             "override_dialer": {
               "$ref": "#/$defs/OverrideDialerOptions"
@@ -17760,7 +17804,29 @@
                   "type": "string"
                 },
                 "health_check": {
-                  "$ref": "#/$defs/ProviderHealthCheckOptions"
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "interval": {
+                          "$ref": "#/$defs/Duration"
+                        },
+                        "timeout": {
+                          "$ref": "#/$defs/Duration"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
                 },
                 "override_dialer": {
                   "$ref": "#/$defs/OverrideDialerOptions"
@@ -17808,7 +17874,29 @@
                   "type": "string"
                 },
                 "health_check": {
-                  "$ref": "#/$defs/ProviderHealthCheckOptions"
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "interval": {
+                          "$ref": "#/$defs/Duration"
+                        },
+                        "timeout": {
+                          "$ref": "#/$defs/Duration"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
                 },
                 "override_dialer": {
                   "$ref": "#/$defs/OverrideDialerOptions"
@@ -17857,7 +17945,29 @@
                   "type": "string"
                 },
                 "health_check": {
-                  "$ref": "#/$defs/ProviderHealthCheckOptions"
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "interval": {
+                          "$ref": "#/$defs/Duration"
+                        },
+                        "timeout": {
+                          "$ref": "#/$defs/Duration"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
                 },
                 "override_dialer": {
                   "$ref": "#/$defs/OverrideDialerOptions"
@@ -17878,24 +17988,6 @@
           ]
         }
       ]
-    },
-    "ProviderHealthCheckOptions": {
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "url": {
-          "type": "string"
-        },
-        "interval": {
-          "$ref": "#/$defs/Duration"
-        },
-        "timeout": {
-          "$ref": "#/$defs/Duration"
-        }
-      },
-      "additionalProperties": false
     },
     "RouteOptions": {
       "type": "object",

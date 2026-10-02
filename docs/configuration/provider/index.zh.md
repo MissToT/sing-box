@@ -87,11 +87,17 @@
 
 #### health_check
 
-健康检查配置。
+健康检查配置。默认启用，设为 `false` 可关闭。
+
+也支持布尔值简写：
+
+```json
+"health_check": true
+```
 
 ##### health_check.enabled
 
-是否启用健康检查。
+是否启用健康检查。默认为 `true`。
 
 ##### health_check.url
 
