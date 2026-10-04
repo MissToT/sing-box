@@ -23,6 +23,10 @@ import (
 
 type unifiedDelayKey struct{}
 
+// DefaultTestLink is the latency test link used when the configuration does not
+// provide one.
+const DefaultTestLink = "https://captive.apple.com/generate_204"
+
 // ContextWithUnifiedDelay binds the measurement policy to one instance or request.
 func ContextWithUnifiedDelay(ctx context.Context, enabled bool) context.Context {
 	return context.WithValue(ctx, unifiedDelayKey{}, enabled)
@@ -114,7 +118,7 @@ func URLTest(ctx context.Context, link string, detour N.Dialer) (uint16, error) 
 
 func urlTest(ctx context.Context, link string, detour N.Dialer) (t uint16, err error) {
 	if link == "" {
-		link = "https://www.gstatic.com/generate_204"
+		link = DefaultTestLink
 	}
 	linkURL, err := url.Parse(link)
 	if err != nil {
